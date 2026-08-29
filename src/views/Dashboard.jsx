@@ -5,7 +5,7 @@ import {
 import { Wallet, Banknote, TrendingUp, TrendingDown, Ticket } from 'lucide-react'
 import StatCard from '../components/StatCard'
 import { eur } from '../lib/format'
-import { buildMonthlySeries, totalsFromSeries, ticketsCasinoBalance, TICKETS_CASINO_CATEGORIES } from '../lib/aggregate'
+import { buildMonthlySeries, totalsFromSeries, ticketsCasinoBalance, isNonCashTicketCategory } from '../lib/aggregate'
 
 export default function Dashboard({ ecritures, saison, categories }) {
   const months = useMemo(() => buildMonthlySeries(ecritures, saison, categories), [ecritures, saison, categories])
@@ -18,7 +18,7 @@ export default function Dashboard({ ecritures, saison, categories }) {
   const catById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories])
   const isCashMovement = (e) => {
     const cat = catById[e.categorie_id]
-    return !(cat && TICKETS_CASINO_CATEGORIES.has(cat.nom))
+    return !(cat && isNonCashTicketCategory(cat.nom, e.type))
   }
 
   const soldeBanque = useMemo(() => {

@@ -1,8 +1,9 @@
-import { MOIS, MOIS_SAISON_ORDER } from './format'
+import { MOIS } from './format'
 
-// Construit la liste des mois de la saison (Sept -> Août) avec les cumuls
-// d'écritures validées, dans l'esprit de l'onglet "Analyse par mois" /
-// "Récap par mois" du fichier Google Sheet.
+// Construit la liste des mois de la saison, dans l'ordre réel à partir du
+// mois de début de saison (ex: si la saison démarre le 25/08, l'ordre est
+// Août -> Juillet suivant), avec les cumuls d'écritures validées, dans
+// l'esprit de l'onglet "Analyse par mois" / "Récap par mois" du Sheet.
 // `categories` sert à exclure les catégories "tickets casino" (Adhésions par
 // Bankroll, Dons par Bankroll, Fin de validité TC, Paiement par Bankroll,
 // Ticket casino) du calcul du solde de trésorerie réel : ces écritures ne
@@ -10,11 +11,14 @@ import { MOIS, MOIS_SAISON_ORDER } from './format'
 // aux adhérents.
 export function buildMonthlySeries(ecritures, saison, categories = []) {
   const debut = saison ? new Date(saison.date_debut) : null
+  const startMonth = debut ? debut.getMonth() : 8
   const startYear = debut ? debut.getFullYear() : new Date().getFullYear()
   const catById = Object.fromEntries(categories.map((c) => [c.id, c]))
 
-  const months = MOIS_SAISON_ORDER.map((monthIndex, i) => {
-    const year = monthIndex >= (debut?.getMonth() ?? 8) ? startYear : startYear + 1
+  const monthOrder = Array.from({ length: 12 }, (_, i) => (startMonth + i) % 12)
+
+  const months = monthOrder.map((monthIndex, i) => {
+    const year = monthIndex >= startMonth ? startYear : startYear + 1
     return {
       key: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
       label: MOIS[monthIndex],
@@ -37,7 +41,7 @@ export function buildMonthlySeries(ecritures, saison, categories = []) {
     const m = byKey[key]
     if (!m) continue
     const cat = catById[e.categorie_id]
-    const isTicket = cat && TICKETS_CASINO_CATEGORIES.has(cat.nom)
+    const isTicket = cat && isNonCashTicketCategory(cat.nom, e.type)
     if (e.type === 'recette') {
       m.revenus += e.montant
       if (e.ticket_casino) m.ticketsCasino += e.montant
@@ -95,15 +99,43 @@ export function categoryTotals(ecritures, categories) {
 
 // Catégories liées au solde de tickets casino en attente (lots dus aux
 // adhérents, utilisables pour payer une cotisation ou un buy-in casino).
-// Une recette dans ces catégories = un ticket est consommé (solde dû ↓).
-// Une dépense dans ces catégories = un ticket est émis (solde dû ↑).
-export const TICKETS_CASINO_CATEGORIES = new Set([
-  'Adhésions par Bankroll',
-  'Dons par Bankroll',
-  'Fin de validité TC',
-  'Paiement par Bankroll',
-  'Ticket casino',
+// La clé combine type ET nom car certaines catégories existent en recette
+// ET en dépense sous le même nom, avec des effets différents sur le solde :
+//  -1 = le solde dû diminue (un ticket est consommé / réglé)
+//  +1 = le solde dû augmente (un nouveau ticket est dû à un joueur)
+export const TICKET_ADJUSTMENTS = {
+  'recette:Adhésions par Bankroll': -1,
+  'recette:Dons par Bankroll': -1,
+  'recette:Paiement par Bankroll': -1,
+  'recette:Fin de validité TC': -1,
+  'depense:Ticket casino': -1,
+  'depense:Dotation Tickets casino': 1,
+}
+
+export function ticketSign(categorieNom, type) {
+  return TICKET_ADJUSTMENTS[`${type}:${categorieNom}`]
+}
+
+export function isTicketAffectingCategory(categorieNom, type) {
+  return ticketSign(categorieNom, type) !== undefined
+}
+
+// Parmi les catégories qui touchent le solde de tickets, certaines ne
+// déplacent aucun argent réel (le joueur paie/est crédité avec son solde de
+// tickets, pas avec de l'argent) : elles ne doivent donc pas impacter les
+// soldes banque/caisse. "Ticket casino" (dépense) fait exception : c'est un
+// vrai rachat en argent, il doit bien sortir de la trésorerie.
+const NON_CASH_TICKET_CATEGORIES = new Set([
+  'recette:Adhésions par Bankroll',
+  'recette:Dons par Bankroll',
+  'recette:Paiement par Bankroll',
+  'recette:Fin de validité TC',
+  'depense:Dotation Tickets casino',
 ])
+
+export function isNonCashTicketCategory(categorieNom, type) {
+  return NON_CASH_TICKET_CATEGORIES.has(`${type}:${categorieNom}`)
+}
 
 export function ticketsCasinoBalance(ecritures, categories, saison) {
   const catById = Object.fromEntries(categories.map((c) => [c.id, c]))
@@ -111,8 +143,10 @@ export function ticketsCasinoBalance(ecritures, categories, saison) {
   for (const e of ecritures) {
     if (e.statut !== 'valide') continue
     const cat = catById[e.categorie_id]
-    if (!cat || !TICKETS_CASINO_CATEGORIES.has(cat.nom)) continue
-    solde += e.type === 'depense' ? e.montant : -e.montant
+    if (!cat) continue
+    const sign = ticketSign(cat.nom, e.type)
+    if (sign === undefined) continue
+    solde += sign * e.montant
   }
   return solde
 }

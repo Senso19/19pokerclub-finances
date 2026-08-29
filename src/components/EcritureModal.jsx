@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { X, Trash2 } from 'lucide-react'
+import { isTicketAffectingCategory, ticketSign } from '../lib/aggregate'
 
 const MODES = ['Espèces', 'CB', 'Chèque', 'Virement', 'Autre']
 
-export default function EcritureModal({ initial, categories, defaultCompte, onSave, onDelete, onClose }) {
+export default function EcritureModal({ initial, categories, defaultCompte, joueurs = [], onSave, onDelete, onClose }) {
   const [form, setForm] = useState(
     initial || {
       date: new Date().toISOString().slice(0, 10),
@@ -16,19 +17,43 @@ export default function EcritureModal({ initial, categories, defaultCompte, onSa
       statut: 'valide',
       ticket_casino: false,
       note: '',
+      joueur: '',
     }
   )
+  // Sélection distincte du texte stocké : évite d'effacer le joueur existant
+  // si on modifie une écriture sans retoucher ce champ.
+  const [joueurKey, setJoueurKey] = useState('')
+  const [nouveauJoueur, setNouveauJoueur] = useState(false)
+  const [nouveauNom, setNouveauNom] = useState('')
+  const [nouveauPrenom, setNouveauPrenom] = useState('')
   const [saving, setSaving] = useState(false)
 
   function update(field, val) {
     setForm((f) => ({ ...f, [field]: val }))
   }
 
+  const selectedCategory = categories.find((c) => c.id === form.categorie_id)
+  const isTicketCategory = selectedCategory && isTicketAffectingCategory(selectedCategory.nom, form.type)
+
   async function submit(e) {
     e.preventDefault()
     if (!form.date || !form.montant || Number(form.montant) <= 0) return
+    const hasJoueur = nouveauJoueur ? nouveauNom.trim() : joueurKey
+    if (isTicketCategory && !form.joueur && !hasJoueur) return
     setSaving(true)
-    await onSave({ ...form, montant: Number(form.montant) })
+    const picked = joueurs.find((j) => `${j.nom}|${j.prenom}` === joueurKey)
+    const joueurNom = nouveauJoueur ? nouveauNom.trim() : picked?.nom
+    const joueurPrenom = nouveauJoueur ? nouveauPrenom.trim() : picked?.prenom
+    await onSave({
+      ...form,
+      montant: Number(form.montant),
+      joueur: isTicketCategory ? (joueurNom ? `${joueurPrenom} ${joueurNom}`.trim() : form.joueur || null) : null,
+      // Ces champs ne sont utilisés que pour appeler le Sheet ; ils ne sont
+      // pas envoyés à Supabase (retirés dans App.jsx avant l'insert).
+      _joueurNom: joueurNom || null,
+      _joueurPrenom: joueurPrenom || null,
+      _ticketSign: isTicketCategory ? ticketSign(selectedCategory.nom, form.type) : null,
+    })
     setSaving(false)
   }
 
@@ -106,6 +131,61 @@ export default function EcritureModal({ initial, categories, defaultCompte, onSa
             ))}
           </select>
         </label>
+
+        {isTicketCategory && (
+          <div className="flex flex-col gap-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-ink/50 text-xs uppercase tracking-wide">
+                Joueur {form.joueur && !joueurKey && !nouveauJoueur ? `(actuellement : ${form.joueur})` : ''}
+              </span>
+              <select
+                value={nouveauJoueur ? '__nouveau__' : joueurKey}
+                onChange={(e) => {
+                  if (e.target.value === '__nouveau__') {
+                    setNouveauJoueur(true)
+                    setJoueurKey('')
+                  } else {
+                    setNouveauJoueur(false)
+                    setJoueurKey(e.target.value)
+                  }
+                }}
+                className="border border-ink/15 rounded-xl px-3 py-2 bg-white"
+              >
+                <option value="">
+                  {joueurs.length === 0 ? 'Liste des joueurs indisponible' : 'Choisir un joueur…'}
+                </option>
+                {joueurs.map((j) => (
+                  <option key={`${j.nom}|${j.prenom}`} value={`${j.nom}|${j.prenom}`}>
+                    {j.prenom} {j.nom}
+                  </option>
+                ))}
+                <option value="__nouveau__">+ Nouveau joueur (pas encore sur le Sheet)</option>
+              </select>
+              <span className="text-[11px] text-ink/40">
+                Le solde de ce joueur sera mis à jour automatiquement sur le Sheet "Tickets en attente".
+              </span>
+            </label>
+            {nouveauJoueur && (
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  required
+                  value={nouveauNom}
+                  onChange={(e) => setNouveauNom(e.target.value)}
+                  placeholder="Nom"
+                  className="border border-ink/15 rounded-xl px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  value={nouveauPrenom}
+                  onChange={(e) => setNouveauPrenom(e.target.value)}
+                  placeholder="Prénom"
+                  className="border border-ink/15 rounded-xl px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-ink/50 text-xs uppercase tracking-wide">Description</span>

@@ -3,7 +3,7 @@ import { Wallet, ScanEye, ArrowRightLeft } from 'lucide-react'
 import TransactionTable from '../components/TransactionTable'
 import StatCard from '../components/StatCard'
 import { eur } from '../lib/format'
-import { TICKETS_CASINO_CATEGORIES } from '../lib/aggregate'
+import { isNonCashTicketCategory } from '../lib/aggregate'
 
 export default function Caisse({
   ecritures,
@@ -25,7 +25,7 @@ export default function Caisse({
       .filter((e) => {
         if (e.statut !== 'valide') return false
         const cat = catById[e.categorie_id]
-        return !(cat && TICKETS_CASINO_CATEGORIES.has(cat.nom))
+        return !(cat && isNonCashTicketCategory(cat.nom, e.type))
       })
       .reduce((s, e) => s + (e.type === 'recette' ? e.montant : -e.montant), depart)
   }, [caisseEcritures, saison, catById])

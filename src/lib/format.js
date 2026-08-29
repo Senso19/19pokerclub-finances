@@ -3,9 +3,6 @@ export const MOIS = [
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
 ]
 
-// Ordre "saison" comme dans le fichier Google Sheet : Sept -> Août
-export const MOIS_SAISON_ORDER = [8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7]
-
 export function eur(value) {
   const n = Number(value || 0)
   return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })

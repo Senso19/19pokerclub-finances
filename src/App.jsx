@@ -10,6 +10,7 @@ import PasswordGate from './components/PasswordGate'
 import EcritureModal from './components/EcritureModal'
 import CategoriesPanel from './components/CategoriesPanel'
 import TransferModal from './components/TransferModal'
+import { fetchJoueurs, syncJoueurSolde, ticketsSyncEnabled } from './lib/ticketsSync'
 
 const TABS = [
   { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutGrid },
@@ -32,6 +33,8 @@ export default function App() {
   const [showPasswordGate, setShowPasswordGate] = useState(false)
   const [showCategories, setShowCategories] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
+  const [joueurs, setJoueurs] = useState([])
+  const [syncWarning, setSyncWarning] = useState('')
   const [modalState, setModalState] = useState(null) // { ecriture: null|obj, defaultCompte }
 
   const saison = useMemo(() => saisons.find((s) => s.active) || saisons[0], [saisons])
@@ -39,6 +42,9 @@ export default function App() {
 
   useEffect(() => {
     loadAll()
+    if (ticketsSyncEnabled()) {
+      fetchJoueurs().then(setJoueurs)
+    }
   }, [])
 
   async function loadAll() {
@@ -89,7 +95,9 @@ export default function App() {
   }
 
   async function saveEcriture(form) {
-    const payload = { ...form, saison_id: saison?.id }
+    const isNew = !form.id
+    const { _joueurNom, _joueurPrenom, _ticketSign, ...clean } = form
+    const payload = { ...clean, saison_id: saison?.id }
     if (form.id) {
       const { data, error } = await supabase.from('ecritures').update(payload).eq('id', form.id).select().single()
       if (!error) setEcritures((prev) => prev.map((e) => (e.id === data.id ? data : e)))
@@ -98,6 +106,26 @@ export default function App() {
       if (!error) setEcritures((prev) => [data, ...prev])
     }
     setModalState(null)
+
+    // Répercute sur le Sheet uniquement à la création d'une écriture dans
+    // une catégorie ticket, et seulement si un joueur a été sélectionné.
+    if (isNew && _joueurNom && _ticketSign && ticketsSyncEnabled()) {
+      const sens = _ticketSign > 0 ? 'augmenter' : 'diminuer'
+      const result = await syncJoueurSolde({ nom: _joueurNom, prenom: _joueurPrenom, montant: form.montant, sens })
+      if (!result.success) {
+        setSyncWarning(
+          `L'écriture est enregistrée, mais la mise à jour du Sheet a échoué (${result.error || 'erreur inconnue'}). Pense à corriger le solde de ${_joueurPrenom} ${_joueurNom} manuellement.`
+        )
+      } else {
+        setJoueurs((prev) => {
+          const exists = prev.some((j) => j.nom === _joueurNom && j.prenom === _joueurPrenom)
+          if (exists) {
+            return prev.map((j) => (j.nom === _joueurNom && j.prenom === _joueurPrenom ? { ...j, solde: result.newSolde } : j))
+          }
+          return [...prev, { nom: _joueurNom, prenom: _joueurPrenom, solde: result.newSolde }]
+        })
+      }
+    }
   }
 
   async function deleteEcriture(id) {
@@ -243,6 +271,14 @@ export default function App() {
             {errorMsg}
           </div>
         )}
+        {syncWarning && (
+          <div className="mb-6 bg-chip-gold/10 border border-chip-gold/30 text-ink rounded-xl p-4 text-sm flex justify-between gap-3">
+            <span>{syncWarning}</span>
+            <button onClick={() => setSyncWarning('')} className="text-ink/40 hover:text-ink flex-shrink-0">
+              ✕
+            </button>
+          </div>
+        )}
 
         {!errorMsg && tab === 'dashboard' && (
           <Dashboard ecritures={ecritures} saison={saison} categories={categories} />
@@ -292,6 +328,7 @@ export default function App() {
           initial={modalState.ecriture}
           defaultCompte={modalState.defaultCompte}
           categories={activeCategories}
+          joueurs={joueurs}
           onSave={saveEcriture}
           onDelete={modalState.ecriture ? deleteEcriture : undefined}
           onClose={() => setModalState(null)}
