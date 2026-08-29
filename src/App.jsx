@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LayoutGrid, BookText, Wallet, Table2, Tags, Lock, Unlock, Spade } from 'lucide-react'
+import { LayoutGrid, BookText, Wallet, Table2, BarChart3, Tags, Lock, Unlock, Spade } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import Dashboard from './views/Dashboard'
 import Journal from './views/Journal'
 import Caisse from './views/Caisse'
 import Recap from './views/Recap'
+import Visualisation from './views/Visualisation'
 import PasswordGate from './components/PasswordGate'
 import EcritureModal from './components/EcritureModal'
 import CategoriesPanel from './components/CategoriesPanel'
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'journal', label: 'Journal', icon: BookText },
   { id: 'caisse', label: 'Caisse', icon: Wallet },
   { id: 'recap', label: 'Récap par mois', icon: Table2 },
+  { id: 'visualisation', label: 'Visualisation', icon: BarChart3 },
 ]
 
 export default function App() {
@@ -152,12 +154,8 @@ export default function App() {
       <header className="sticky top-0 z-30 bg-ivory/90 backdrop-blur border-b border-ink/5">
         <div className="max-w-5xl mx-auto px-4 md:px-6 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            {/* Remplace ce cercle par <img src="/logo.png" className="w-9 h-9 rounded-full object-cover" /> une fois le logo du club fourni */}
-            <div className="w-9 h-9 rounded-full bg-felt flex items-center justify-center text-white font-display font-semibold text-sm">
-              19
-            </div>
-            <div>
-              <h1 className="font-display font-semibold text-ink leading-tight">19PokerClub</h1>
+            <img src="/logo.png" alt="DIX'9 Poker Club" className="h-8 w-auto" />
+            <div className="hidden sm:block border-l border-ink/10 pl-2.5">
               <p className="text-[11px] text-ink/40 leading-tight">Suivi financier</p>
             </div>
           </div>
@@ -217,6 +215,9 @@ export default function App() {
           />
         )}
         {!errorMsg && tab === 'recap' && <Recap ecritures={ecritures} saison={saison} />}
+        {!errorMsg && tab === 'visualisation' && (
+          <Visualisation ecritures={ecritures} categories={activeCategories} saison={saison} />
+        )}
       </main>
 
       {showPasswordGate && (

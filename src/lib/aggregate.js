@@ -56,3 +56,27 @@ export function totalsFromSeries(months) {
     { revenus: 0, depenses: 0, ticketsCasino: 0 }
   )
 }
+
+// Somme des écritures validées par catégorie, séparé recettes / dépenses,
+// trié du plus grand au plus petit — pour le graphique en barres horizontales
+// de l'onglet Visualisation.
+export function categoryTotals(ecritures, categories) {
+  const catById = Object.fromEntries(categories.map((c) => [c.id, c]))
+  const totals = {}
+
+  for (const e of ecritures) {
+    if (e.statut !== 'valide') continue
+    const cat = catById[e.categorie_id]
+    const key = `${e.type}:${e.categorie_id || 'none'}`
+    if (!totals[key]) {
+      totals[key] = { nom: cat?.nom || 'Sans catégorie', type: e.type, total: 0 }
+    }
+    totals[key].total += e.montant
+  }
+
+  const all = Object.values(totals)
+  const recettes = all.filter((t) => t.type === 'recette').sort((a, b) => b.total - a.total)
+  const depenses = all.filter((t) => t.type === 'depense').sort((a, b) => b.total - a.total)
+
+  return { recettes, depenses }
+}
