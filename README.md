@@ -80,4 +80,3 @@ supabase-schema.sql
 - La "saison active" est déterminée par `saisons.active = true`. Pour
   démarrer une saison 12, ajoute une nouvelle ligne dans `saisons` avec
   `active = true` et repasse l'ancienne à `false`.
-  Test déploiement auto

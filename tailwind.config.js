@@ -4,19 +4,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        ivory: '#F7F3E8',
+        ivory: '#F4F7FB',
         felt: {
-          DEFAULT: '#0B3D2E',
-          dark: '#082C21',
-          light: '#144E3A',
+          DEFAULT: '#0F3D66',
+          dark: '#0A2C4A',
+          light: '#1E5A91',
         },
-        ink: '#1C2321',
+        ink: '#122438',
         chip: {
-          gold: '#D9A63E',
+          gold: '#B98A2E',
           red: '#C1443C',
-          blue: '#2C5F8A',
-          black: '#1A1A1A',
-          white: '#F7F3E8',
+          blue: '#2E7DD1',
+          black: '#0A2C4A',
+          white: '#FFFFFF',
         },
       },
       fontFamily: {
@@ -26,7 +26,7 @@ export default {
       },
       boxShadow: {
         chip: '0 4px 0 rgba(0,0,0,0.25), 0 6px 12px rgba(0,0,0,0.2)',
-        card: '0 1px 2px rgba(28,35,33,0.04), 0 8px 24px rgba(28,35,33,0.06)',
+        card: '0 1px 2px rgba(15,61,102,0.05), 0 8px 24px rgba(15,61,102,0.08)',
       },
       borderRadius: {
         chip: '9999px',

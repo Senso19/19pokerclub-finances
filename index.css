@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: #F4F7FB;
+  color: #122438;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: #2E7DD1;
+  color: #FFFFFF;
+}
+
+/* subtle texture for the hero panel */
+.felt-texture {
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(255,255,255,0.06) 0, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(255,255,255,0.05) 0, transparent 45%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
