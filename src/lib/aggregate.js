@@ -3,9 +3,15 @@ import { MOIS, MOIS_SAISON_ORDER } from './format'
 // Construit la liste des mois de la saison (Sept -> Août) avec les cumuls
 // d'écritures validées, dans l'esprit de l'onglet "Analyse par mois" /
 // "Récap par mois" du fichier Google Sheet.
-export function buildMonthlySeries(ecritures, saison) {
+// `categories` sert à exclure les catégories "tickets casino" (Adhésions par
+// Bankroll, Dons par Bankroll, Fin de validité TC, Paiement par Bankroll,
+// Ticket casino) du calcul du solde de trésorerie réel : ces écritures ne
+// déplacent aucun argent, elles ajustent seulement le solde de tickets dû
+// aux adhérents.
+export function buildMonthlySeries(ecritures, saison, categories = []) {
   const debut = saison ? new Date(saison.date_debut) : null
   const startYear = debut ? debut.getFullYear() : new Date().getFullYear()
+  const catById = Object.fromEntries(categories.map((c) => [c.id, c]))
 
   const months = MOIS_SAISON_ORDER.map((monthIndex, i) => {
     const year = monthIndex >= (debut?.getMonth() ?? 8) ? startYear : startYear + 1
@@ -17,6 +23,8 @@ export function buildMonthlySeries(ecritures, saison) {
       revenus: 0,
       depenses: 0,
       ticketsCasino: 0,
+      encaisse: 0,
+      decaisse: 0,
     }
   })
 
@@ -28,18 +36,22 @@ export function buildMonthlySeries(ecritures, saison) {
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     const m = byKey[key]
     if (!m) continue
+    const cat = catById[e.categorie_id]
+    const isTicket = cat && TICKETS_CASINO_CATEGORIES.has(cat.nom)
     if (e.type === 'recette') {
       m.revenus += e.montant
       if (e.ticket_casino) m.ticketsCasino += e.montant
+      if (!isTicket) m.encaisse += e.montant
     } else {
       m.depenses += e.montant
+      if (!isTicket) m.decaisse += e.montant
     }
   }
 
   let solde = (saison?.solde_banque_debut ?? 0) + (saison?.solde_caisse_debut ?? 0)
   for (const m of months) {
     m.ecart = m.revenus - m.depenses
-    solde += m.ecart
+    solde += m.encaisse - m.decaisse
     m.soldeCumule = solde
   }
 

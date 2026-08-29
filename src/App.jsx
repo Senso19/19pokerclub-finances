@@ -263,7 +263,7 @@ export default function App() {
             onTransfer={openTransfer}
           />
         )}
-        {!errorMsg && tab === 'recap' && <Recap ecritures={ecritures} saison={saison} />}
+        {!errorMsg && tab === 'recap' && <Recap ecritures={ecritures} saison={saison} categories={categories} />}
         {!errorMsg && tab === 'visualisation' && (
           <Visualisation ecritures={ecritures} categories={activeCategories} saison={saison} />
         )}

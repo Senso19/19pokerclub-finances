@@ -22,8 +22,8 @@ function Row({ label, values, format = eur, tone, bold }) {
   )
 }
 
-export default function Recap({ ecritures, saison }) {
-  const months = useMemo(() => buildMonthlySeries(ecritures, saison), [ecritures, saison])
+export default function Recap({ ecritures, saison, categories }) {
+  const months = useMemo(() => buildMonthlySeries(ecritures, saison, categories), [ecritures, saison, categories])
   const totals = useMemo(() => totalsFromSeries(months), [months])
 
   const goodBad = (v) => (v >= 0 ? 'text-chip-blue' : 'text-chip-red')

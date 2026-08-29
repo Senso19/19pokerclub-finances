@@ -5,33 +5,39 @@ import {
 import { Wallet, Banknote, TrendingUp, TrendingDown, Ticket } from 'lucide-react'
 import StatCard from '../components/StatCard'
 import { eur } from '../lib/format'
-import { buildMonthlySeries, totalsFromSeries, ticketsCasinoBalance } from '../lib/aggregate'
+import { buildMonthlySeries, totalsFromSeries, ticketsCasinoBalance, TICKETS_CASINO_CATEGORIES } from '../lib/aggregate'
 
 export default function Dashboard({ ecritures, saison, categories }) {
-  const months = useMemo(() => buildMonthlySeries(ecritures, saison), [ecritures, saison])
+  const months = useMemo(() => buildMonthlySeries(ecritures, saison, categories), [ecritures, saison, categories])
   const totals = useMemo(() => totalsFromSeries(months), [months])
   const soldeTickets = useMemo(
     () => ticketsCasinoBalance(ecritures, categories, saison),
     [ecritures, categories, saison]
   )
 
+  const catById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories])
+  const isCashMovement = (e) => {
+    const cat = catById[e.categorie_id]
+    return !(cat && TICKETS_CASINO_CATEGORIES.has(cat.nom))
+  }
+
   const soldeBanque = useMemo(() => {
     let s = saison?.solde_banque_debut ?? 0
     for (const e of ecritures) {
-      if (e.statut !== 'valide' || e.compte !== 'banque') continue
+      if (e.statut !== 'valide' || e.compte !== 'banque' || !isCashMovement(e)) continue
       s += e.type === 'recette' ? e.montant : -e.montant
     }
     return s
-  }, [ecritures, saison])
+  }, [ecritures, saison, catById])
 
   const soldeCaisse = useMemo(() => {
     let s = saison?.solde_caisse_debut ?? 0
     for (const e of ecritures) {
-      if (e.statut !== 'valide' || e.compte !== 'caisse') continue
+      if (e.statut !== 'valide' || e.compte !== 'caisse' || !isCashMovement(e)) continue
       s += e.type === 'recette' ? e.montant : -e.montant
     }
     return s
-  }, [ecritures, saison])
+  }, [ecritures, saison, catById])
 
   const soldeTotal = soldeBanque + soldeCaisse
   const dernierMoisActif = [...months].reverse().find((m) => m.revenus || m.depenses)

@@ -3,6 +3,7 @@ import { Wallet, ScanEye, ArrowRightLeft } from 'lucide-react'
 import TransactionTable from '../components/TransactionTable'
 import StatCard from '../components/StatCard'
 import { eur } from '../lib/format'
+import { TICKETS_CASINO_CATEGORIES } from '../lib/aggregate'
 
 export default function Caisse({
   ecritures,
@@ -16,13 +17,18 @@ export default function Caisse({
   onTransfer,
 }) {
   const caisseEcritures = useMemo(() => ecritures.filter((e) => e.compte === 'caisse'), [ecritures])
+  const catById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories])
 
   const soldeCaisse = useMemo(() => {
     const depart = saison?.solde_caisse_debut ?? 0
     return caisseEcritures
-      .filter((e) => e.statut === 'valide')
+      .filter((e) => {
+        if (e.statut !== 'valide') return false
+        const cat = catById[e.categorie_id]
+        return !(cat && TICKETS_CASINO_CATEGORIES.has(cat.nom))
+      })
       .reduce((s, e) => s + (e.type === 'recette' ? e.montant : -e.montant), depart)
-  }, [caisseEcritures, saison])
+  }, [caisseEcritures, saison, catById])
 
   const [compte, setCompte] = useState(releve?.solde_caisse_compte ?? '')
   const ecart = compte === '' ? null : Number(compte) - soldeCaisse
