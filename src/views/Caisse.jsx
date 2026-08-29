@@ -1,10 +1,20 @@
 import { useMemo, useState } from 'react'
-import { Wallet, ScanEye } from 'lucide-react'
+import { Wallet, ScanEye, ArrowRightLeft } from 'lucide-react'
 import TransactionTable from '../components/TransactionTable'
 import StatCard from '../components/StatCard'
 import { eur } from '../lib/format'
 
-export default function Caisse({ ecritures, categories, onAdd, onEdit, editMode, releve, onSaveReleve, saison }) {
+export default function Caisse({
+  ecritures,
+  categories,
+  onAdd,
+  onEdit,
+  editMode,
+  releve,
+  onSaveReleve,
+  saison,
+  onTransfer,
+}) {
   const caisseEcritures = useMemo(() => ecritures.filter((e) => e.compte === 'caisse'), [ecritures])
 
   const soldeCaisse = useMemo(() => {
@@ -19,9 +29,19 @@ export default function Caisse({ ecritures, categories, onAdd, onEdit, editMode,
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="font-display text-xl font-semibold text-felt">Journal de caisse</h2>
-        <p className="text-sm text-ink/50 mt-1">Mouvements d'espèces uniquement.</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="font-display text-xl font-semibold text-felt">Journal de caisse</h2>
+          <p className="text-sm text-ink/50 mt-1">Mouvements d'espèces uniquement.</p>
+        </div>
+        {editMode && (
+          <button
+            onClick={onTransfer}
+            className="flex items-center gap-1.5 bg-white border border-ink/10 rounded-xl px-3.5 py-2 text-sm font-medium text-ink/70 hover:bg-ink/5"
+          >
+            <ArrowRightLeft size={14} /> Déposer en banque
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

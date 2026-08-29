@@ -80,3 +80,27 @@ export function categoryTotals(ecritures, categories) {
 
   return { recettes, depenses }
 }
+
+// Catégories liées au solde de tickets casino en attente (lots dus aux
+// adhérents, utilisables pour payer une cotisation ou un buy-in casino).
+// Une recette dans ces catégories = un ticket est consommé (solde dû ↓).
+// Une dépense dans ces catégories = un ticket est émis (solde dû ↑).
+export const TICKETS_CASINO_CATEGORIES = new Set([
+  'Adhésions par Bankroll',
+  'Dons par Bankroll',
+  'Fin de validité TC',
+  'Paiement par Bankroll',
+  'Ticket casino',
+])
+
+export function ticketsCasinoBalance(ecritures, categories, saison) {
+  const catById = Object.fromEntries(categories.map((c) => [c.id, c]))
+  let solde = saison?.solde_tickets_debut ?? 0
+  for (const e of ecritures) {
+    if (e.statut !== 'valide') continue
+    const cat = catById[e.categorie_id]
+    if (!cat || !TICKETS_CASINO_CATEGORIES.has(cat.nom)) continue
+    solde += e.type === 'depense' ? e.montant : -e.montant
+  }
+  return solde
+}

@@ -9,6 +9,7 @@ import Visualisation from './views/Visualisation'
 import PasswordGate from './components/PasswordGate'
 import EcritureModal from './components/EcritureModal'
 import CategoriesPanel from './components/CategoriesPanel'
+import TransferModal from './components/TransferModal'
 
 const TABS = [
   { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutGrid },
@@ -30,6 +31,7 @@ export default function App() {
   const [editMode, setEditMode] = useState(false)
   const [showPasswordGate, setShowPasswordGate] = useState(false)
   const [showCategories, setShowCategories] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
   const [modalState, setModalState] = useState(null) // { ecriture: null|obj, defaultCompte }
 
   const saison = useMemo(() => saisons.find((s) => s.active) || saisons[0], [saisons])
@@ -82,6 +84,10 @@ export default function App() {
     requestEdit(() => setModalState({ ecriture, defaultCompte: ecriture.compte }))
   }
 
+  function openTransfer() {
+    requestEdit(() => setShowTransfer(true))
+  }
+
   async function saveEcriture(form) {
     const payload = { ...form, saison_id: saison?.id }
     if (form.id) {
@@ -99,6 +105,45 @@ export default function App() {
     const { error } = await supabase.from('ecritures').delete().eq('id', id)
     if (!error) setEcritures((prev) => prev.filter((e) => e.id !== id))
     setModalState(null)
+  }
+
+  async function findOrCreateTransferCategory() {
+    const existing = categories.find((c) => c.nom === 'Caisse vers banque')
+    if (existing) return existing
+    const { data, error } = await supabase
+      .from('categories')
+      .insert({ nom: 'Caisse vers banque', type: 'mixte', couleur: '#2C5F8A', icone: 'repeat', ordre: 99 })
+      .select()
+      .single()
+    if (error) throw error
+    setCategories((prev) => [...prev, data])
+    return data
+  }
+
+  async function transferCaisseToBanque({ date, montant, personne }) {
+    const cat = await findOrCreateTransferCategory()
+    const base = {
+      date,
+      categorie_id: cat.id,
+      saison_id: saison?.id,
+      statut: 'valide',
+      mode_paiement: 'Espèces',
+      note: `Dépôt en banque effectué par ${personne}`,
+    }
+    const { data: sortie, error: err1 } = await supabase
+      .from('ecritures')
+      .insert({ ...base, description: `Retrait caisse → dépôt banque (${personne})`, montant, type: 'depense', compte: 'caisse' })
+      .select()
+      .single()
+    if (err1) throw err1
+    const { data: entree, error: err2 } = await supabase
+      .from('ecritures')
+      .insert({ ...base, description: `Dépôt depuis caisse (${personne})`, montant, type: 'recette', compte: 'banque' })
+      .select()
+      .single()
+    if (err2) throw err2
+    setEcritures((prev) => [entree, sortie, ...prev])
+    setShowTransfer(false)
   }
 
   async function createCategorie(payload) {
@@ -199,7 +244,9 @@ export default function App() {
           </div>
         )}
 
-        {!errorMsg && tab === 'dashboard' && <Dashboard ecritures={ecritures} saison={saison} />}
+        {!errorMsg && tab === 'dashboard' && (
+          <Dashboard ecritures={ecritures} saison={saison} categories={categories} />
+        )}
         {!errorMsg && tab === 'journal' && (
           <Journal ecritures={ecritures} categories={activeCategories} onAdd={openAdd} onEdit={openEdit} editMode={editMode} />
         )}
@@ -213,6 +260,7 @@ export default function App() {
             releve={currentMonthReleve}
             onSaveReleve={saveReleve}
             saison={saison}
+            onTransfer={openTransfer}
           />
         )}
         {!errorMsg && tab === 'recap' && <Recap ecritures={ecritures} saison={saison} />}
@@ -248,6 +296,10 @@ export default function App() {
           onDelete={modalState.ecriture ? deleteEcriture : undefined}
           onClose={() => setModalState(null)}
         />
+      )}
+
+      {showTransfer && (
+        <TransferModal onConfirm={transferCaisseToBanque} onClose={() => setShowTransfer(false)} />
       )}
 
       {showCategories && (

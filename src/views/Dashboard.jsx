@@ -5,11 +5,15 @@ import {
 import { Wallet, Banknote, TrendingUp, TrendingDown, Ticket } from 'lucide-react'
 import StatCard from '../components/StatCard'
 import { eur } from '../lib/format'
-import { buildMonthlySeries, totalsFromSeries } from '../lib/aggregate'
+import { buildMonthlySeries, totalsFromSeries, ticketsCasinoBalance } from '../lib/aggregate'
 
-export default function Dashboard({ ecritures, saison }) {
+export default function Dashboard({ ecritures, saison, categories }) {
   const months = useMemo(() => buildMonthlySeries(ecritures, saison), [ecritures, saison])
   const totals = useMemo(() => totalsFromSeries(months), [months])
+  const soldeTickets = useMemo(
+    () => ticketsCasinoBalance(ecritures, categories, saison),
+    [ecritures, categories, saison]
+  )
 
   const soldeBanque = useMemo(() => {
     let s = saison?.solde_banque_debut ?? 0
@@ -60,7 +64,7 @@ export default function Dashboard({ ecritures, saison }) {
           value={eur(totals.revenus - totals.depenses)}
           tone={totals.revenus - totals.depenses >= 0 ? 'good' : 'bad'}
         />
-        <StatCard label="Tickets casino" value={eur(totals.ticketsCasino)} tone="gold" icon={Ticket} />
+        <StatCard label="Tickets casino (solde dû)" value={eur(soldeTickets)} tone="gold" icon={Ticket} />
       </div>
 
       <div className="bg-white rounded-2xl shadow-card p-5">
