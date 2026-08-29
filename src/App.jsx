@@ -248,12 +248,12 @@ export default function App() {
           <Dashboard ecritures={ecritures} saison={saison} categories={categories} />
         )}
         {!errorMsg && tab === 'journal' && (
-          <Journal ecritures={ecritures} categories={activeCategories} onAdd={openAdd} onEdit={openEdit} editMode={editMode} />
+          <Journal ecritures={ecritures} categories={categories} onAdd={openAdd} onEdit={openEdit} editMode={editMode} />
         )}
         {!errorMsg && tab === 'caisse' && (
           <Caisse
             ecritures={ecritures}
-            categories={activeCategories}
+            categories={categories}
             onAdd={openAdd}
             onEdit={openEdit}
             editMode={editMode}
@@ -265,7 +265,7 @@ export default function App() {
         )}
         {!errorMsg && tab === 'recap' && <Recap ecritures={ecritures} saison={saison} categories={categories} />}
         {!errorMsg && tab === 'visualisation' && (
-          <Visualisation ecritures={ecritures} categories={activeCategories} saison={saison} />
+          <Visualisation ecritures={ecritures} categories={categories} saison={saison} />
         )}
       </main>
 
