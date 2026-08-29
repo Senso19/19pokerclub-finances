@@ -212,6 +212,7 @@ export default function App() {
             editMode={editMode}
             releve={currentMonthReleve}
             onSaveReleve={saveReleve}
+            saison={saison}
           />
         )}
         {!errorMsg && tab === 'recap' && <Recap ecritures={ecritures} saison={saison} />}

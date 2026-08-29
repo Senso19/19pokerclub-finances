@@ -36,7 +36,7 @@ export function buildMonthlySeries(ecritures, saison) {
     }
   }
 
-  let solde = saison?.solde_banque_debut ?? 0
+  let solde = (saison?.solde_banque_debut ?? 0) + (saison?.solde_caisse_debut ?? 0)
   for (const m of months) {
     m.ecart = m.revenus - m.depenses
     solde += m.ecart

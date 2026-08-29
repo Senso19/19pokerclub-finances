@@ -33,7 +33,8 @@ export default function Recap({ ecritures, saison }) {
       <div>
         <h2 className="font-display text-xl font-semibold text-felt">Récap par mois</h2>
         <p className="text-sm text-ink/50 mt-1">
-          {saison?.nom} · solde de départ {eur(saison?.solde_banque_debut)}
+          {saison?.nom} · solde de départ {eur((saison?.solde_banque_debut ?? 0) + (saison?.solde_caisse_debut ?? 0))}
+          {' '}(banque {eur(saison?.solde_banque_debut)} + caisse {eur(saison?.solde_caisse_debut)})
         </p>
       </div>
 

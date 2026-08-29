@@ -21,13 +21,13 @@ export default function Dashboard({ ecritures, saison }) {
   }, [ecritures, saison])
 
   const soldeCaisse = useMemo(() => {
-    let s = 0
+    let s = saison?.solde_caisse_debut ?? 0
     for (const e of ecritures) {
       if (e.statut !== 'valide' || e.compte !== 'caisse') continue
       s += e.type === 'recette' ? e.montant : -e.montant
     }
     return s
-  }, [ecritures])
+  }, [ecritures, saison])
 
   const soldeTotal = soldeBanque + soldeCaisse
   const dernierMoisActif = [...months].reverse().find((m) => m.revenus || m.depenses)

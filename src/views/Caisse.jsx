@@ -4,16 +4,15 @@ import TransactionTable from '../components/TransactionTable'
 import StatCard from '../components/StatCard'
 import { eur } from '../lib/format'
 
-export default function Caisse({ ecritures, categories, onAdd, onEdit, editMode, releve, onSaveReleve }) {
+export default function Caisse({ ecritures, categories, onAdd, onEdit, editMode, releve, onSaveReleve, saison }) {
   const caisseEcritures = useMemo(() => ecritures.filter((e) => e.compte === 'caisse'), [ecritures])
 
-  const soldeCaisse = useMemo(
-    () =>
-      caisseEcritures
-        .filter((e) => e.statut === 'valide')
-        .reduce((s, e) => s + (e.type === 'recette' ? e.montant : -e.montant), 0),
-    [caisseEcritures]
-  )
+  const soldeCaisse = useMemo(() => {
+    const depart = saison?.solde_caisse_debut ?? 0
+    return caisseEcritures
+      .filter((e) => e.statut === 'valide')
+      .reduce((s, e) => s + (e.type === 'recette' ? e.montant : -e.montant), depart)
+  }, [caisseEcritures, saison])
 
   const [compte, setCompte] = useState(releve?.solde_caisse_compte ?? '')
   const ecart = compte === '' ? null : Number(compte) - soldeCaisse
