@@ -42,6 +42,18 @@ export default function App() {
   const saison = useMemo(() => saisons.find((s) => s.active) || saisons[0], [saisons])
   const activeCategories = useMemo(() => categories.filter((c) => !c.archivee), [categories])
 
+  // Dans l'onglet Caisse, l'ajout d'écriture ne doit proposer que les
+  // catégories liées à la buvette/festival — pas toutes les catégories du
+  // club, qui n'ont pas de sens pour du liquide en caisse.
+  const CAISSE_CATEGORY_NAMES = {
+    recette: ['Buvette', 'Buvette par CB', 'Divers recettes', 'Festival: Buvette & restauration'],
+    depense: ['Buvette', 'Autres dépenses', 'Festival: Buvette & restauration'],
+  }
+  const caisseCategories = useMemo(
+    () => activeCategories.filter((c) => CAISSE_CATEGORY_NAMES[c.type]?.includes(c.nom)),
+    [activeCategories]
+  )
+
   useEffect(() => {
     loadAll()
     if (ticketsSyncEnabled()) {
@@ -87,8 +99,8 @@ export default function App() {
     }
   }
 
-  function openAdd(defaultCompte) {
-    requestEdit(() => setModalState({ ecriture: null, defaultCompte }))
+  function openAdd(defaultCompte, restrict) {
+    requestEdit(() => setModalState({ ecriture: null, defaultCompte, restrict }))
   }
 
   function openEdit(ecriture) {
@@ -363,7 +375,7 @@ export default function App() {
         <EcritureModal
           initial={modalState.ecriture}
           defaultCompte={modalState.defaultCompte}
-          categories={activeCategories}
+          categories={modalState.restrict ? caisseCategories : activeCategories}
           joueurs={joueurs}
           inscrits={inscrits}
           onSave={saveEcriture}

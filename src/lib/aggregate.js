@@ -42,17 +42,14 @@ export function buildMonthlySeries(ecritures, saison, categories = []) {
     if (!m) continue
     const cat = catById[e.categorie_id]
     const isTicket = cat && isNonCashTicketCategory(cat.nom, e.type)
+    const isTransfer = cat && isInternalTransferCategory(cat.nom, e.type)
     if (e.type === 'recette') {
       if (e.ticket_casino) m.ticketsCasino += e.montant
-      if (!isTicket) {
-        m.revenus += e.montant
-        m.encaisse += e.montant
-      }
+      if (!isTicket && !isTransfer) m.revenus += e.montant
+      if (!isTicket) m.encaisse += e.montant
     } else {
-      if (!isTicket) {
-        m.depenses += e.montant
-        m.decaisse += e.montant
-      }
+      if (!isTicket && !isTransfer) m.depenses += e.montant
+      if (!isTicket) m.decaisse += e.montant
     }
   }
 
@@ -87,7 +84,7 @@ export function categoryTotals(ecritures, categories) {
   for (const e of ecritures) {
     if (e.statut !== 'valide') continue
     const cat = catById[e.categorie_id]
-    if (cat && isNonCashTicketCategory(cat.nom, e.type)) continue
+    if (cat && (isNonCashTicketCategory(cat.nom, e.type) || isInternalTransferCategory(cat.nom, e.type))) continue
     const key = `${e.type}:${e.categorie_id || 'none'}`
     if (!totals[key]) {
       totals[key] = { nom: cat?.nom || 'Sans catégorie', type: e.type, total: 0 }
@@ -140,6 +137,15 @@ const NON_CASH_TICKET_CATEGORIES = new Set([
 
 export function isNonCashTicketCategory(categorieNom, type) {
   return NON_CASH_TICKET_CATEGORIES.has(`${type}:${categorieNom}`)
+}
+
+// "Caisse vers banque" déplace de l'argent d'un compte du club à l'autre :
+// ça doit bien bouger les soldes banque/caisse individuellement, mais ce
+// n'est ni une vraie recette ni une vraie dépense pour la saison.
+const INTERNAL_TRANSFER_CATEGORIES = new Set(['recette:Caisse vers banque', 'depense:Caisse vers banque'])
+
+export function isInternalTransferCategory(categorieNom, type) {
+  return INTERNAL_TRANSFER_CATEGORIES.has(`${type}:${categorieNom}`)
 }
 
 // Catégories qui déclenchent la validation de la cotisation sur le

@@ -93,7 +93,7 @@ export default function Caisse({
       <TransactionTable
         ecritures={caisseEcritures}
         categories={categories}
-        onAdd={() => onAdd('caisse')}
+        onAdd={() => onAdd('caisse', true)}
         onEdit={onEdit}
         editMode={editMode}
         emptyLabel="Aucun mouvement de caisse enregistré."
