@@ -11,6 +11,7 @@ import EcritureModal from './components/EcritureModal'
 import CategoriesPanel from './components/CategoriesPanel'
 import TransferModal from './components/TransferModal'
 import { fetchJoueurs, syncJoueurSolde, ticketsSyncEnabled } from './lib/ticketsSync'
+import { validateAdhesion, inscriptionSyncEnabled } from './lib/inscriptionSync'
 
 const TABS = [
   { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutGrid },
@@ -96,19 +97,34 @@ export default function App() {
 
   async function saveEcriture(form) {
     const isNew = !form.id
-    const { _joueurNom, _joueurPrenom, _ticketSign, ...clean } = form
+    const { _joueurNom, _joueurPrenom, _ticketSign, _needsAdhesionValidation, ...clean } = form
     const payload = { ...clean, saison_id: saison?.id }
+    let saved = null
+    let saveError = null
     if (form.id) {
       const { data, error } = await supabase.from('ecritures').update(payload).eq('id', form.id).select().single()
+      saved = data
+      saveError = error
       if (!error) setEcritures((prev) => prev.map((e) => (e.id === data.id ? data : e)))
     } else {
       const { data, error } = await supabase.from('ecritures').insert(payload).select().single()
+      saved = data
+      saveError = error
       if (!error) setEcritures((prev) => [data, ...prev])
     }
+
+    if (saveError) {
+      setSyncWarning(
+        `L'écriture n'a pas pu être enregistrée (${saveError.message}). Vérifie que les migrations SQL ont bien été exécutées dans Supabase (notamment la colonne "joueur").`
+      )
+      return
+    }
+
     setModalState(null)
 
-    // Répercute sur le Sheet uniquement à la création d'une écriture dans
-    // une catégorie ticket, et seulement si un joueur a été sélectionné.
+    // Répercute sur le Sheet uniquement si l'écriture est bien enregistrée,
+    // à la création (pas à la modification), dans une catégorie ticket, et
+    // seulement si un joueur a été sélectionné.
     if (isNew && _joueurNom && _ticketSign && ticketsSyncEnabled()) {
       const sens = _ticketSign > 0 ? 'augmenter' : 'diminuer'
       const result = await syncJoueurSolde({ nom: _joueurNom, prenom: _joueurPrenom, montant: form.montant, sens })
@@ -124,6 +140,22 @@ export default function App() {
           }
           return [...prev, { nom: _joueurNom, prenom: _joueurPrenom, solde: result.newSolde }]
         })
+      }
+    }
+
+    // Valide (ou alerte par mail) sur le formulaire d'inscription pour les
+    // catégories d'adhésion.
+    if (isNew && _joueurNom && _needsAdhesionValidation && inscriptionSyncEnabled()) {
+      const cat = categories.find((c) => c.id === form.categorie_id)
+      const result = await validateAdhesion({ nom: _joueurNom, prenom: _joueurPrenom, categorie: cat?.nom })
+      if (!result.success) {
+        setSyncWarning(
+          `L'écriture est enregistrée, mais la validation sur le formulaire d'inscription a échoué (${result.error || 'erreur inconnue'}).`
+        )
+      } else if (result.found === false) {
+        setSyncWarning(
+          `${_joueurPrenom} ${_joueurNom} n'a pas de ligne sur le formulaire d'inscription — un mail d'alerte a été envoyé à 19pokerclub@gmail.com.`
+        )
       }
     }
   }

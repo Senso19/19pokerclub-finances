@@ -91,10 +91,18 @@ function doPost(e) {
     }
 
     if (rowIndex === -1) {
-      // Joueur pas encore sur la feuille (ex: nouvelle dotation) : on crée
-      // sa ligne juste au-dessus de la ligne TOTAL pour que les formules de
-      // somme continuent de l'inclure.
-      const insertAt = totalRowIndex !== -1 ? totalRowIndex + 1 : data.length + 1; // 1-indexé
+      // Joueur pas encore sur la feuille (ex: nouvelle dotation) : on trouve
+      // la position alphabétique (sur NOM) où l'insérer, pour garder le
+      // tableau trié. Par défaut, juste au-dessus de la ligne TOTAL.
+      let insertAt = totalRowIndex !== -1 ? totalRowIndex + 1 : data.length + 1; // 1-indexé
+      for (let i = headerRowIndex + 1; i < data.length; i++) {
+        const rowNomRaw = String(data[i][colNom] || '').trim();
+        if (!rowNomRaw || rowNomRaw.toUpperCase() === 'TOTAL') break;
+        if (rowNomRaw.toUpperCase() > nom) {
+          insertAt = i + 1; // 1-indexé
+          break;
+        }
+      }
       sheet.insertRowBefore(insertAt);
       const newRow = insertAt;
       sheet.getRange(newRow, colNom + 1).setValue(body.nom);

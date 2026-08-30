@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X, Trash2 } from 'lucide-react'
-import { isTicketAffectingCategory, ticketSign } from '../lib/aggregate'
+import { isTicketAffectingCategory, ticketSign, needsJoueur, needsAdhesionValidation } from '../lib/aggregate'
 
 const MODES = ['Espèces', 'CB', 'Chèque', 'Virement', 'Autre']
 
@@ -33,7 +33,7 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
   }
 
   const selectedCategory = categories.find((c) => c.id === form.categorie_id)
-  const isTicketCategory = selectedCategory && isTicketAffectingCategory(selectedCategory.nom, form.type)
+  const isTicketCategory = selectedCategory && needsJoueur(selectedCategory.nom, form.type)
 
   async function submit(e) {
     e.preventDefault()
@@ -48,11 +48,14 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
       ...form,
       montant: Number(form.montant),
       joueur: isTicketCategory ? (joueurNom ? `${joueurPrenom} ${joueurNom}`.trim() : form.joueur || null) : null,
-      // Ces champs ne sont utilisés que pour appeler le Sheet ; ils ne sont
-      // pas envoyés à Supabase (retirés dans App.jsx avant l'insert).
+      joueur_nom: isTicketCategory ? joueurNom || form.joueur_nom || null : null,
+      joueur_prenom: isTicketCategory ? joueurPrenom || form.joueur_prenom || null : null,
+      // Ces deux indicateurs ne sont utilisés que pour d\u00e9clencher les
+      // synchros c\u00f4t\u00e9 App.jsx ; ils ne sont pas envoy\u00e9s \u00e0 Supabase.
       _joueurNom: joueurNom || null,
       _joueurPrenom: joueurPrenom || null,
       _ticketSign: isTicketCategory ? ticketSign(selectedCategory.nom, form.type) : null,
+      _needsAdhesionValidation: selectedCategory ? needsAdhesionValidation(selectedCategory.nom, form.type) : false,
     })
     setSaving(false)
   }
@@ -162,7 +165,11 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
                 <option value="__nouveau__">+ Nouveau joueur (pas encore sur le Sheet)</option>
               </select>
               <span className="text-[11px] text-ink/40">
-                Le solde de ce joueur sera mis à jour automatiquement sur le Sheet "Tickets en attente".
+                {isTicketAffectingCategory(selectedCategory?.nom, form.type) && needsAdhesionValidation(selectedCategory?.nom, form.type)
+                  ? 'Met à jour le solde du joueur sur le Sheet "Tickets en attente" et valide sa cotisation sur le formulaire d\'inscription.'
+                  : isTicketAffectingCategory(selectedCategory?.nom, form.type)
+                    ? 'Le solde de ce joueur sera mis à jour automatiquement sur le Sheet "Tickets en attente".'
+                    : 'Valide automatiquement la cotisation de ce joueur sur le formulaire d\'inscription.'}
               </span>
             </label>
             {nouveauJoueur && (

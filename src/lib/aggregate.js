@@ -137,6 +137,20 @@ export function isNonCashTicketCategory(categorieNom, type) {
   return NON_CASH_TICKET_CATEGORIES.has(`${type}:${categorieNom}`)
 }
 
+// Catégories qui déclenchent la validation de la cotisation sur le
+// formulaire d'inscription (recherche du joueur + mail d'alerte s'il est
+// introuvable). "Adhésions par Bankroll" est dans les deux listes : elle
+// touche le solde de tickets ET valide l'inscription.
+const ADHESION_VALIDATION_CATEGORIES = new Set(['recette:Adhésions', 'recette:Adhésions par Bankroll'])
+
+export function needsAdhesionValidation(categorieNom, type) {
+  return ADHESION_VALIDATION_CATEGORIES.has(`${type}:${categorieNom}`)
+}
+
+export function needsJoueur(categorieNom, type) {
+  return isTicketAffectingCategory(categorieNom, type) || needsAdhesionValidation(categorieNom, type)
+}
+
 export function ticketsCasinoBalance(ecritures, categories, saison) {
   const catById = Object.fromEntries(categories.map((c) => [c.id, c]))
   let solde = saison?.solde_tickets_debut ?? 0
