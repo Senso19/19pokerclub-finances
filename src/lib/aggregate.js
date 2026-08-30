@@ -43,12 +43,16 @@ export function buildMonthlySeries(ecritures, saison, categories = []) {
     const cat = catById[e.categorie_id]
     const isTicket = cat && isNonCashTicketCategory(cat.nom, e.type)
     if (e.type === 'recette') {
-      m.revenus += e.montant
       if (e.ticket_casino) m.ticketsCasino += e.montant
-      if (!isTicket) m.encaisse += e.montant
+      if (!isTicket) {
+        m.revenus += e.montant
+        m.encaisse += e.montant
+      }
     } else {
-      m.depenses += e.montant
-      if (!isTicket) m.decaisse += e.montant
+      if (!isTicket) {
+        m.depenses += e.montant
+        m.decaisse += e.montant
+      }
     }
   }
 
@@ -83,6 +87,7 @@ export function categoryTotals(ecritures, categories) {
   for (const e of ecritures) {
     if (e.statut !== 'valide') continue
     const cat = catById[e.categorie_id]
+    if (cat && isNonCashTicketCategory(cat.nom, e.type)) continue
     const key = `${e.type}:${e.categorie_id || 'none'}`
     if (!totals[key]) {
       totals[key] = { nom: cat?.nom || 'Sans catégorie', type: e.type, total: 0 }

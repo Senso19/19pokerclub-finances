@@ -154,7 +154,7 @@ function getJoueursPayes_() {
   const catIds = cats.map(function (c) { return c.id; });
   if (catIds.length === 0) return [];
 
-  const idsFilter = catIds.map(function (id) { return '"' + id + '"'; }).join(',');
+  const idsFilter = catIds.join(',');
   const ecrituresUrl =
     SUPABASE_URL + '/rest/v1/ecritures?select=joueur_nom,joueur_prenom,categorie_id' +
     '&type=eq.recette&statut=eq.valide&joueur_nom=not.is.null&categorie_id=in.(' + idsFilter + ')';
