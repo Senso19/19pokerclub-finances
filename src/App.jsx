@@ -11,7 +11,7 @@ import EcritureModal from './components/EcritureModal'
 import CategoriesPanel from './components/CategoriesPanel'
 import TransferModal from './components/TransferModal'
 import { fetchJoueurs, syncJoueurSolde, ticketsSyncEnabled } from './lib/ticketsSync'
-import { validateAdhesion, inscriptionSyncEnabled } from './lib/inscriptionSync'
+import { validateAdhesion, inscriptionSyncEnabled, fetchInscrits } from './lib/inscriptionSync'
 
 const TABS = [
   { id: 'dashboard', label: "Vue d'ensemble", icon: LayoutGrid },
@@ -35,6 +35,7 @@ export default function App() {
   const [showCategories, setShowCategories] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
   const [joueurs, setJoueurs] = useState([])
+  const [inscrits, setInscrits] = useState([])
   const [syncWarning, setSyncWarning] = useState('')
   const [modalState, setModalState] = useState(null) // { ecriture: null|obj, defaultCompte }
 
@@ -45,6 +46,9 @@ export default function App() {
     loadAll()
     if (ticketsSyncEnabled()) {
       fetchJoueurs().then(setJoueurs)
+    }
+    if (inscriptionSyncEnabled()) {
+      fetchInscrits().then(setInscrits)
     }
   }, [])
 
@@ -361,6 +365,7 @@ export default function App() {
           defaultCompte={modalState.defaultCompte}
           categories={activeCategories}
           joueurs={joueurs}
+          inscrits={inscrits}
           onSave={saveEcriture}
           onDelete={modalState.ecriture ? deleteEcriture : undefined}
           onClose={() => setModalState(null)}

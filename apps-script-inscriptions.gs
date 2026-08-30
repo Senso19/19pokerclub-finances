@@ -1,16 +1,23 @@
 /**
  * 19PokerClub · Validation des adhésions payées via le formulaire d'inscription
  *
- * Installation (sur le fichier "Formulaire d'adhésion 2026/2027", onglet
- * "Inscriptions") :
- * 1. Ouvre ce Google Sheet → Extensions → Apps Script.
- * 2. Crée un NOUVEAU fichier de script (ou vide celui existant si ce Sheet
- *    n'a pas déjà un autre script actif) et colle tout ce fichier.
+ * Ce script est INDÉPENDANT du script déjà présent sur ce Sheet (celui qui
+ * gère les liens Winamax/BlindValet) : il accède au fichier par son ID
+ * plutôt que d'être "le" script du Sheet, donc les deux coexistent sans se
+ * marcher dessus.
+ *
+ * Installation :
+ * 1. Va sur script.google.com (PAS via Extensions → Apps Script du Sheet,
+ *    pour ne pas toucher au script existant) → Nouveau projet.
+ * 2. Colle tout ce fichier.
  * 3. Déployer → Nouveau déploiement → type "Application Web".
  *    - Exécuter en tant que : Moi
  *    - Qui a accès : Tous
- * 4. Copie l'URL /exec, donne-la moi ou colle-la dans Vercel comme
+ * 4. Autorise les permissions demandées (accès à ce Sheet précis + Gmail).
+ * 5. Copie l'URL /exec, donne-la moi ou colle-la dans Vercel comme
  *    VITE_INSCRIPTION_SCRIPT_URL.
+ * 6. Pour le rapport hebdomadaire (voir plus bas dans ce fichier), exécute
+ *    une fois la fonction installerDeclencheurHebdomadaire.
  *
  * Comportement :
  * - Cherche le joueur par Nom + Prénom dans l'onglet "Inscriptions".
@@ -19,6 +26,7 @@
  * - S'il n'existe pas : envoie un mail d'alerte à 19pokerclub@gmail.com.
  */
 
+const SPREADSHEET_ID = '1Fd3hRZoqAnhUgerl4exBKEjtetmOKKsRu_QHif_81UA';
 const SHEET_TAB = 'Inscriptions';
 const COL_NOM = 'Nom';
 const COL_PRENOM = 'Prénom';
@@ -26,10 +34,34 @@ const COL_VALIDATION = 'Cotisation réglée';
 const ALERT_EMAIL = '19pokerclub@gmail.com';
 
 function findInscriptionsSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(SHEET_TAB) || ss.getSheets()[0];
   const data = sheet.getDataRange().getValues();
   return { sheet, data, headerRowIndex: 0 };
+}
+
+// Liste des joueurs inscrits (pour le menu déroulant "Joueur" du site quand
+// la catégorie est "Adhésions").
+function doGet(e) {
+  const { data, headerRowIndex } = findInscriptionsSheet_();
+  const headers = data[headerRowIndex];
+  const colNom = headers.indexOf(COL_NOM);
+  const colPrenom = headers.indexOf(COL_PRENOM);
+  const colValidation = headers.indexOf(COL_VALIDATION);
+
+  const joueurs = [];
+  for (let i = headerRowIndex + 1; i < data.length; i++) {
+    const nom = data[i][colNom];
+    if (!nom) continue;
+    joueurs.push({
+      nom: String(nom).trim(),
+      prenom: String(data[i][colPrenom] || '').trim(),
+      regle: colValidation !== -1 ? Boolean(data[i][colValidation]) : false,
+    });
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ joueurs }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
@@ -162,7 +194,7 @@ function getInscrits_() {
 }
 
 function getTrackingSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet = ss.getSheetByName(TRACKING_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(TRACKING_SHEET_NAME);

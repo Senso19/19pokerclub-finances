@@ -4,7 +4,7 @@ import { isTicketAffectingCategory, ticketSign, needsJoueur, needsAdhesionValida
 
 const MODES = ['Espèces', 'CB', 'Chèque', 'Virement', 'Autre']
 
-export default function EcritureModal({ initial, categories, defaultCompte, joueurs = [], onSave, onDelete, onClose }) {
+export default function EcritureModal({ initial, categories, defaultCompte, joueurs = [], inscrits = [], onSave, onDelete, onClose }) {
   const [form, setForm] = useState(
     initial || {
       date: new Date().toISOString().slice(0, 10),
@@ -34,6 +34,8 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
 
   const selectedCategory = categories.find((c) => c.id === form.categorie_id)
   const isTicketCategory = selectedCategory && needsJoueur(selectedCategory.nom, form.type)
+  const usesInscrits = selectedCategory && selectedCategory.nom === 'Adhésions' && form.type === 'recette'
+  const joueurSource = usesInscrits ? inscrits : joueurs
 
   async function submit(e) {
     e.preventDefault()
@@ -41,7 +43,7 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
     const hasJoueur = nouveauJoueur ? nouveauNom.trim() : joueurKey
     if (isTicketCategory && !form.joueur && !hasJoueur) return
     setSaving(true)
-    const picked = joueurs.find((j) => `${j.nom}|${j.prenom}` === joueurKey)
+    const picked = joueurSource.find((j) => `${j.nom}|${j.prenom}` === joueurKey)
     const joueurNom = nouveauJoueur ? nouveauNom.trim() : picked?.nom
     const joueurPrenom = nouveauJoueur ? nouveauPrenom.trim() : picked?.prenom
     await onSave({
@@ -124,7 +126,11 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
           <span className="text-ink/50 text-xs uppercase tracking-wide">Catégorie</span>
           <select
             value={form.categorie_id}
-            onChange={(e) => update('categorie_id', e.target.value)}
+            onChange={(e) => {
+              update('categorie_id', e.target.value)
+              setJoueurKey('')
+              setNouveauJoueur(false)
+            }}
             className="border border-ink/15 rounded-xl px-3 py-2 bg-white"
           >
             {filteredCategories.map((c) => (
@@ -155,9 +161,9 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
                 className="border border-ink/15 rounded-xl px-3 py-2 bg-white"
               >
                 <option value="">
-                  {joueurs.length === 0 ? 'Liste des joueurs indisponible' : 'Choisir un joueur…'}
+                  {joueurSource.length === 0 ? 'Liste des joueurs indisponible' : 'Choisir un joueur…'}
                 </option>
-                {joueurs.map((j) => (
+                {joueurSource.map((j) => (
                   <option key={`${j.nom}|${j.prenom}`} value={`${j.nom}|${j.prenom}`}>
                     {j.prenom} {j.nom}
                   </option>

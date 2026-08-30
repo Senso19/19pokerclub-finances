@@ -4,6 +4,18 @@ export function inscriptionSyncEnabled() {
   return Boolean(SCRIPT_URL)
 }
 
+export async function fetchInscrits() {
+  if (!SCRIPT_URL) return []
+  try {
+    const res = await fetch(SCRIPT_URL)
+    const data = await res.json()
+    return data.joueurs || []
+  } catch (err) {
+    console.error('Impossible de charger la liste des inscrits depuis le formulaire d\'adhésion', err)
+    return []
+  }
+}
+
 export async function validateAdhesion({ nom, prenom, categorie }) {
   if (!SCRIPT_URL) return { success: false, error: 'Synchronisation non configurée' }
   try {
