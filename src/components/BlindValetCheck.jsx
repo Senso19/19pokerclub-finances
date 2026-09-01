@@ -1,10 +1,6 @@
 import { useState } from 'react'
-import { ClipboardPaste, CheckCircle2, AlertTriangle, Mail } from 'lucide-react'
-import { envoyerAlerteComplete } from '../lib/inscriptionSync'
-
-function normalise(s) {
-  return String(s || '').trim().toLowerCase()
-}
+import { ClipboardPaste, Mail, Printer } from 'lucide-react'
+import { previsualiserAdhesions, envoyerAlerteComplete } from '../lib/inscriptionSync'
 
 // Le copier-coller depuis BlindValet ramène aussi les tapis (lignes
 // purement numériques) et parfois les initiales d'avatar sur leur propre
@@ -17,32 +13,73 @@ function nettoyerPseudos(texte) {
     .filter((l) => l.length > 3 && !/^\d+$/.test(l))
 }
 
-export default function BlindValetCheck({ inscrits }) {
+const CATEGORIE_STYLE = {
+  'En règle': 'bg-chip-blue/10 text-chip-blue',
+  'A régulariser - Cotisation': 'bg-chip-gold/10 text-chip-gold',
+  'A régulariser - Cotisation & Inscrit BV': 'bg-chip-red/10 text-chip-red',
+  'A régulariser - Formulaire': 'bg-chip-gold/10 text-chip-gold',
+  'A régulariser - Formulaire & Inscrit BV': 'bg-chip-red/10 text-chip-red',
+  'A régulariser - All': 'bg-chip-red/10 text-chip-red',
+  'A régulariser - All & Inscrit BV': 'bg-chip-red/10 text-chip-red',
+}
+
+function RosterTable({ roster }) {
+  const rows = [...roster].sort((a, b) => {
+    if (a.categorie !== b.categorie) return a.categorie === 'En règle' ? 1 : b.categorie === 'En règle' ? -1 : a.categorie.localeCompare(b.categorie)
+    return a.nom.localeCompare(b.nom)
+  })
+
+  return (
+    <div id="roster-imprimable" className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-ink/40 text-xs uppercase tracking-wide border-b border-ink/10">
+            <th className="px-3 py-2 font-semibold">Joueur</th>
+            <th className="px-3 py-2 font-semibold">Catégorie</th>
+            <th className="px-3 py-2 font-semibold">Étapes BV</th>
+            <th className="px-3 py-2 font-semibold">Depuis</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p, i) => (
+            <tr key={i} className="border-b border-ink/5 last:border-0">
+              <td className="px-3 py-2">{p.prenom ? `${p.prenom} ${p.nom}` : p.nom}</td>
+              <td className="px-3 py-2">
+                <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${CATEGORIE_STYLE[p.categorie] || ''}`}>
+                  {p.categorie.replace('A régulariser - ', '')}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-ink/60">{p.etapes || '—'}</td>
+              <td className="px-3 py-2 text-ink/60">
+                {p.semaines ? `${p.semaines} semaine${p.semaines > 1 ? 's' : ''}` : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export default function BlindValetCheck() {
   const [texte, setTexte] = useState('')
-  const [resultat, setResultat] = useState(null)
+  const [roster, setRoster] = useState(null)
+  const [chargement, setChargement] = useState(false)
   const [envoi, setEnvoi] = useState('idle') // idle | envoi | ok | erreur
   const [envoiInfo, setEnvoiInfo] = useState('')
 
-  function verifier() {
+  async function verifier() {
+    setChargement(true)
+    setEnvoiInfo('')
+    setEnvoi('idle')
     const pseudos = nettoyerPseudos(texte)
-
-    const parPseudo = {}
-    inscrits.forEach((j) => {
-      if (j.pseudoBlindValet) parPseudo[normalise(j.pseudoBlindValet)] = j
-    })
-
-    const trouves = []
-    const manquants = []
-    pseudos.forEach((pseudo) => {
-      const match = parPseudo[normalise(pseudo)]
-      if (match) {
-        trouves.push({ pseudo, joueur: match })
-      } else {
-        manquants.push(pseudo)
-      }
-    })
-
-    setResultat({ trouves, manquants })
+    const result = await previsualiserAdhesions(pseudos)
+    if (result.success) {
+      setRoster(result.roster)
+    } else {
+      setEnvoiInfo(result.error || 'Erreur lors de la vérification')
+    }
+    setChargement(false)
   }
 
   async function envoyerAlertes() {
@@ -53,23 +90,47 @@ export default function BlindValetCheck({ inscrits }) {
     if (result.success) {
       setEnvoi('ok')
       setEnvoiInfo(`Mail envoyé — ${result.problemeCount} joueur${result.problemeCount > 1 ? 's' : ''} à relancer, ${result.okCount} en règle.`)
+      setRoster(result.roster)
     } else {
       setEnvoi('erreur')
       setEnvoiInfo(result.error || 'Erreur inconnue')
     }
   }
 
+  function imprimer() {
+    const contenu = document.getElementById('roster-imprimable')?.outerHTML || ''
+    const fenetre = window.open('', '_blank')
+    fenetre.document.write(`
+      <html>
+        <head>
+          <title>19PokerClub — Récapitulatif adhésions</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; }
+            table { border-collapse: collapse; width: 100%; font-size: 13px; }
+            th { background: #0F3D66; color: #fff; text-align: left; padding: 6px 10px; }
+            td { padding: 6px 10px; border-bottom: 1px solid #ddd; }
+          </style>
+        </head>
+        <body>
+          <h2>19PokerClub — Récapitulatif adhésions (${new Date().toLocaleDateString('fr-FR')})</h2>
+          ${contenu}
+        </body>
+      </html>
+    `)
+    fenetre.document.close()
+    fenetre.print()
+  }
+
   return (
     <div className="bg-white rounded-2xl shadow-card p-5 flex flex-col gap-4">
       <div>
         <h3 className="font-display text-base font-semibold text-felt flex items-center gap-2">
-          <ClipboardPaste size={16} /> Check inscrits tournoi BlindValet
+          <ClipboardPaste size={16} /> Check adhésions & tournoi BlindValet
         </h3>
         <p className="text-sm text-ink/50 mt-1">
-          Colle directement ce que tu copies depuis l'onglet "Joueurs" de BlindValet (tapis et initiales
-          d'avatar inclus, ils sont filtrés automatiquement) pour vérifier ce tournoi, et/ou clique sur
-          "Alertes" pour envoyer le récap complet par mail (inscrits non réglés, réglés non inscrits, et — si
-          une liste est collée — joueurs sur ce tournoi sans être en règle).
+          Colle (optionnel) la liste des pseudos BlindValet inscrits à un tournoi — tapis et initiales
+          d'avatar sont filtrés automatiquement. "Vérifier" affiche un aperçu ; "Alertes" enregistre le
+          suivi (compteurs semaines/étapes) et envoie le récap complet par mail.
         </p>
       </div>
 
@@ -84,10 +145,10 @@ export default function BlindValetCheck({ inscrits }) {
       <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={verifier}
-          disabled={!texte.trim()}
+          disabled={chargement}
           className="bg-felt text-ivory rounded-xl px-4 py-2 text-sm font-semibold hover:bg-felt-light disabled:opacity-40"
         >
-          Vérifier
+          {chargement ? 'Vérification…' : 'Vérifier (aperçu)'}
         </button>
         <button
           onClick={envoyerAlertes}
@@ -95,8 +156,16 @@ export default function BlindValetCheck({ inscrits }) {
           className="flex items-center gap-1.5 bg-white border border-ink/10 rounded-xl px-4 py-2 text-sm font-medium text-ink/70 hover:bg-ink/5 disabled:opacity-40"
         >
           <Mail size={14} />
-          {envoi === 'envoi' ? 'Envoi en cours…' : 'Alertes (récap complet par mail)'}
+          {envoi === 'envoi' ? 'Envoi en cours…' : 'Alertes (enregistrer + mail)'}
         </button>
+        {roster && (
+          <button
+            onClick={imprimer}
+            className="flex items-center gap-1.5 bg-white border border-ink/10 rounded-xl px-4 py-2 text-sm font-medium text-ink/70 hover:bg-ink/5"
+          >
+            <Printer size={14} /> Imprimer
+          </button>
+        )}
         {envoiInfo && (
           <span className={`text-xs font-medium ${envoi === 'erreur' ? 'text-chip-red' : 'text-chip-blue'}`}>
             {envoiInfo}
@@ -104,49 +173,7 @@ export default function BlindValetCheck({ inscrits }) {
         )}
       </div>
 
-      {resultat && (
-        <div className="flex flex-col gap-4 mt-2">
-          <div>
-            <div className="flex items-center gap-2 text-chip-red font-semibold text-sm mb-2">
-              <AlertTriangle size={15} />
-              Sans formulaire d'inscription ({resultat.manquants.length})
-            </div>
-            {resultat.manquants.length === 0 ? (
-              <p className="text-sm text-ink/40">Aucun — tous les inscrits ont rempli le formulaire 🎉</p>
-            ) : (
-              <ul className="flex flex-col gap-1">
-                {resultat.manquants.map((pseudo) => (
-                  <li key={pseudo} className="text-sm bg-chip-red/10 text-chip-red rounded-lg px-3 py-1.5">
-                    {pseudo}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2 text-chip-blue font-semibold text-sm mb-2">
-              <CheckCircle2 size={15} />
-              Trouvés sur le formulaire ({resultat.trouves.length})
-            </div>
-            <ul className="flex flex-col gap-1">
-              {resultat.trouves.map(({ pseudo, joueur }) => (
-                <li
-                  key={pseudo}
-                  className="text-sm flex items-center justify-between bg-ivory rounded-lg px-3 py-1.5"
-                >
-                  <span>
-                    {pseudo} <span className="text-ink/40">— {joueur.prenom} {joueur.nom}</span>
-                  </span>
-                  <span className={joueur.regle ? 'text-chip-blue text-xs font-medium' : 'text-chip-gold text-xs font-medium'}>
-                    {joueur.regle ? 'Cotisation réglée' : 'Cotisation non réglée'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
+      {roster && <RosterTable roster={roster} />}
     </div>
   )
 }

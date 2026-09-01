@@ -110,7 +110,7 @@ export default function Visualisation({ ecritures, categories, saison, inscrits 
         <CategoryBarList title="Dépenses par catégorie" items={depenses} color={RED} />
       </div>
 
-      <BlindValetCheck inscrits={inscrits} />
+      <BlindValetCheck />
     </div>
   )
 }

@@ -74,8 +74,14 @@ function doPost(e) {
     if (body.action === 'alerte_complete') {
       const result = envoyerAlerteComplete_(body.pseudos);
       return ContentService.createTextOutput(
-        JSON.stringify({ success: true, problemeCount: result.problemeCount, okCount: result.okCount })
+        JSON.stringify({ success: true, problemeCount: result.problemeCount, okCount: result.okCount, roster: result.roster })
       ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (body.action === 'previsualiser') {
+      const roster = previsualiser_(body.pseudos);
+      return ContentService.createTextOutput(JSON.stringify({ success: true, roster: roster }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
     const nomRaw = String(body.nom || '').trim();
@@ -206,104 +212,239 @@ function getInscrits_() {
   return inscrits;
 }
 
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Catégorisation complète des joueurs (formulaire × cotisation × tournoi
+ * BlindValet) et suivi persistant (semaines depuis la 1ère alerte, nombre
+ * d'étapes BlindValet jouées sans être en règle).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const MS_PAR_SEMAINE = 7 * 24 * 60 * 60 * 1000;
+
+const CATEGORIES = {
+  EN_REGLE: 'En règle',
+  COTISATION: 'A régulariser - Cotisation',
+  COTISATION_BV: 'A régulariser - Cotisation & Inscrit BV',
+  FORMULAIRE: 'A régulariser - Formulaire',
+  FORMULAIRE_BV: 'A régulariser - Formulaire & Inscrit BV',
+  ALL: 'A régulariser - All',
+  ALL_BV: 'A régulariser - All & Inscrit BV',
+};
+
+// Catégories où le joueur est actuellement repéré sur un tournoi
+// BlindValet : c'est celles-là qui incrémentent le compteur d'étapes.
+const CATEGORIES_BV = [CATEGORIES.COTISATION_BV, CATEGORIES.FORMULAIRE_BV, CATEGORIES.ALL_BV];
+
+function categoriserJoueur_(formulaireRempli, cotisationPayee, inscritBV) {
+  if (formulaireRempli && cotisationPayee) return CATEGORIES.EN_REGLE;
+  if (formulaireRempli && !cotisationPayee) return inscritBV ? CATEGORIES.COTISATION_BV : CATEGORIES.COTISATION;
+  if (!formulaireRempli && cotisationPayee) return inscritBV ? CATEGORIES.FORMULAIRE_BV : CATEGORIES.FORMULAIRE;
+  return inscritBV ? CATEGORIES.ALL_BV : CATEGORIES.ALL;
+}
+
+// Construit la liste complète des joueurs connus (inscrits + payeurs sans
+// formulaire + pseudos BlindValet sans aucune ligne), chacun avec sa
+// catégorie exclusive.
+function construireRoster_(pseudosBrut) {
+  const pseudos = (pseudosBrut || []).filter(Boolean);
+  const pseudosSet = {};
+  pseudos.forEach(function (p) { pseudosSet[normName_(p)] = true; });
+
+  const inscrits = getInscrits_();
+  const payes = getJoueursPayes_();
+
+  const payesParClef = {};
+  payes.forEach(function (p) { payesParClef[normName_(p.nom) + '|' + normName_(p.prenom)] = true; });
+
+  const roster = {}; // clef -> { nom, prenom, categorie }
+  const pseudosMatches = {};
+
+  inscrits.forEach(function (p) {
+    const clef = normName_(p.nom) + '|' + normName_(p.prenom);
+    const inscritBV = Boolean(p.pseudoBlindValet && pseudosSet[normName_(p.pseudoBlindValet)]);
+    if (p.pseudoBlindValet) pseudosMatches[normName_(p.pseudoBlindValet)] = true;
+    const cotisationPayee = Boolean(p.regle) || Boolean(payesParClef[clef]);
+    const categorie = categoriserJoueur_(true, cotisationPayee, inscritBV);
+    roster[clef] = { nom: p.nom, prenom: p.prenom, categorie: categorie };
+  });
+
+  // Payeurs sans aucune ligne d'inscription
+  payes.forEach(function (p) {
+    const clef = normName_(p.nom) + '|' + normName_(p.prenom);
+    if (roster[clef]) return;
+    // pas de pseudo connu pour ces joueurs (aucune ligne sur le formulaire)
+    const categorie = categoriserJoueur_(false, true, false);
+    roster[clef] = { nom: p.nom, prenom: p.prenom, categorie: categorie };
+  });
+
+  // Pseudos BlindValet sans aucune ligne d'inscription trouvée
+  pseudos.forEach(function (pseudo) {
+    const norm = normName_(pseudo);
+    if (pseudosMatches[norm]) return;
+    const clef = norm + '|';
+    if (roster[clef]) return;
+    const categorie = categoriserJoueur_(false, false, true);
+    roster[clef] = { nom: pseudo, prenom: '', categorie: categorie };
+  });
+
+  return Object.keys(roster).map(function (clef) { return roster[clef]; });
+}
+
 function getTrackingSheet_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet = ss.getSheetByName(TRACKING_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(TRACKING_SHEET_NAME);
-    sheet.appendRow(['Nom', 'Prénom', 'Motif', 'Compteur', 'Dernière alerte']);
+    sheet.appendRow(['Nom', 'Prénom', 'Catégorie', 'Première alerte', 'Dernière alerte', 'Étapes BV']);
   }
   return sheet;
 }
 
-// Met à jour le compteur pour chaque (nom, prénom, motif) présent cette
-// semaine, retire les entrées résolues, et renvoie la liste à jour avec
-// leur compteur pour l'email.
-function updateTracking_(motif, personnes) {
+// Met à jour le suivi persistant pour les joueurs "à régulariser" de ce
+// passage, calcule le nombre de semaines depuis leur 1ère alerte dans CETTE
+// catégorie (recommence à 1 si la catégorie change), incrémente le compteur
+// d'étapes pour les catégories "... & Inscrit BV", et retire les entrées
+// dont la situation est réglée. Renvoie le roster complet enrichi des
+// compteurs pour les joueurs à régulariser.
+function mettreAJourSuivi_(roster) {
   const sheet = getTrackingSheet_();
   const data = sheet.getDataRange().getValues();
-  const existing = {}; // clé -> { rowNumber, compteur }
+  const existing = {}; // clef -> { row, categorie, premiere, etapes }
   for (let i = 1; i < data.length; i++) {
-    if (data[i][2] !== motif) continue;
-    const key = normName_(data[i][0]) + '|' + normName_(data[i][1]);
-    existing[key] = { row: i + 1, compteur: Number(data[i][3]) || 0 };
+    const clef = normName_(data[i][0]) + '|' + normName_(data[i][1]);
+    existing[clef] = {
+      row: i + 1,
+      categorie: data[i][2],
+      premiere: data[i][3],
+      etapes: Number(data[i][5]) || 0,
+    };
   }
 
+  const now = new Date();
   const presentKeys = {};
-  const resultat = personnes.map(function (p) {
-    const key = normName_(p.nom) + '|' + normName_(p.prenom);
-    presentKeys[key] = true;
-    const prev = existing[key];
-    const compteur = prev ? prev.compteur + 1 : 1;
-    const dateStr = Utilities.formatDate(new Date(), 'Europe/Paris', 'dd/MM/yyyy');
+
+  const enrichi = roster.map(function (p) {
+    if (p.categorie === CATEGORIES.EN_REGLE) return p;
+
+    const clef = normName_(p.nom) + '|' + normName_(p.prenom);
+    presentKeys[clef] = true;
+    const prev = existing[clef];
+    const memeCategorie = prev && prev.categorie === p.categorie;
+    const premiere = memeCategorie ? new Date(prev.premiere) : now;
+    const semaines = Math.floor((now - premiere) / MS_PAR_SEMAINE) + 1;
+    const estBV = CATEGORIES_BV.indexOf(p.categorie) !== -1;
+    const etapes = estBV ? (memeCategorie ? prev.etapes + 1 : 1) : null;
+
     if (prev) {
-      sheet.getRange(prev.row, 4).setValue(compteur);
-      sheet.getRange(prev.row, 5).setValue(dateStr);
+      sheet.getRange(prev.row, 3).setValue(p.categorie);
+      if (!memeCategorie) sheet.getRange(prev.row, 4).setValue(now);
+      sheet.getRange(prev.row, 5).setValue(now);
+      sheet.getRange(prev.row, 6).setValue(etapes || '');
     } else {
-      sheet.appendRow([p.nom, p.prenom, motif, compteur, dateStr]);
+      sheet.appendRow([p.nom, p.prenom, p.categorie, now, now, etapes || '']);
     }
-    return { nom: p.nom, prenom: p.prenom, compteur: compteur };
+
+    return Object.assign({}, p, { semaines: semaines, etapes: etapes });
   });
 
-  // Retire les entrées de ce motif qui ne sont plus présentes (régularisées)
+  // Retire du suivi les joueurs qui ne sont plus "à régulariser" du tout
+  // (situation totalement réglée)
+  const rosterClefs = {};
+  roster.forEach(function (p) { rosterClefs[normName_(p.nom) + '|' + normName_(p.prenom)] = true; });
   const rowsToDelete = [];
-  Object.keys(existing).forEach(function (key) {
-    if (!presentKeys[key]) rowsToDelete.push(existing[key].row);
+  Object.keys(existing).forEach(function (clef) {
+    if (!presentKeys[clef]) rowsToDelete.push(existing[clef].row);
   });
-  rowsToDelete.sort(function (a, b) { return b - a; }).forEach(function (row) {
-    sheet.deleteRow(row);
-  });
+  rowsToDelete
+    .sort(function (a, b) { return b - a; })
+    .forEach(function (row) { sheet.deleteRow(row); });
 
-  return resultat;
+  return enrichi;
 }
 
-function formatListeHtml_(titre, personnes, singulier) {
-  if (personnes.length === 0) {
-    return '<h3>' + titre + '</h3><p>Aucun joueur concerné 🎉</p>';
+function libelleMotif_(categorie, etapes) {
+  const base = categorie.replace('A régulariser - ', '');
+  if (etapes) return base + ' (' + etapes + ' étape' + (etapes > 1 ? 's' : '') + ' BV sans régularisation)';
+  return base;
+}
+
+function construireEmailTableau_(roster) {
+  const aRegulariser = roster.filter(function (p) { return p.categorie !== CATEGORIES.EN_REGLE; });
+  const enRegle = roster.filter(function (p) { return p.categorie === CATEGORIES.EN_REGLE; });
+
+  aRegulariser.sort(function (a, b) {
+    if (a.categorie !== b.categorie) return a.categorie < b.categorie ? -1 : 1;
+    return normName_(a.nom) < normName_(b.nom) ? -1 : 1;
+  });
+  enRegle.sort(function (a, b) { return normName_(a.nom) < normName_(b.nom) ? -1 : 1; });
+
+  const styleTable = 'border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;';
+  const styleTh = 'background:#0F3D66;color:#fff;text-align:left;padding:6px 10px;';
+  const styleTd = 'padding:6px 10px;border-bottom:1px solid #ddd;';
+
+  let html = '<h2 style="font-family:Arial,sans-serif;">19PokerClub — Récapitulatif des adhésions</h2>';
+
+  html += '<h3 style="font-family:Arial,sans-serif;">⚠️ À régulariser (' + aRegulariser.length + ')</h3>';
+  if (aRegulariser.length === 0) {
+    html += '<p style="font-family:Arial,sans-serif;">Personne, tout le monde est en règle 🎉</p>';
+  } else {
+    html += '<table style="' + styleTable + '"><tr>' +
+      '<th style="' + styleTh + '">Joueur</th>' +
+      '<th style="' + styleTh + '">Motif</th>' +
+      '<th style="' + styleTh + '">Depuis</th>' +
+      '</tr>';
+    aRegulariser.forEach(function (p) {
+      html += '<tr>' +
+        '<td style="' + styleTd + '">' + (p.prenom ? p.prenom + ' ' : '') + p.nom + '</td>' +
+        '<td style="' + styleTd + '">' + libelleMotif_(p.categorie, p.etapes) + '</td>' +
+        '<td style="' + styleTd + '">' + p.semaines + (p.semaines > 1 ? ' semaines' : ' semaine') + '</td>' +
+        '</tr>';
+    });
+    html += '</table>';
   }
-  const items = personnes
-    .map(function (p) {
-      const semaine = p.compteur > 1 ? p.compteur + 'e semaine' : '1re semaine';
-      return '<li>' + p.prenom + ' ' + p.nom + ' — <strong>' + semaine + '</strong> (' + singulier + ')</li>';
-    })
-    .join('');
-  return '<h3>' + titre + ' (' + personnes.length + ')</h3><ul>' + items + '</ul>';
+
+  html += '<h3 style="font-family:Arial,sans-serif;">✅ En règle (' + enRegle.length + ')</h3>';
+  if (enRegle.length === 0) {
+    html += '<p style="font-family:Arial,sans-serif;">Aucun joueur.</p>';
+  } else {
+    html += '<table style="' + styleTable + '"><tr><th style="' + styleTh + '">Joueur</th></tr>';
+    enRegle.forEach(function (p) {
+      html += '<tr><td style="' + styleTd + '">' + (p.prenom ? p.prenom + ' ' : '') + p.nom + '</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  return html;
+}
+
+// Catégorise, met à jour le suivi persistant, envoie le mail. Utilisé par
+// le bouton "Alertes" du site ET par le déclencheur automatique du jeudi
+// (sans liste BlindValet dans ce dernier cas — les catégories "& Inscrit BV"
+// ne peuvent alors pas être détectées, c'est normal).
+function envoyerAlerteComplete_(pseudos) {
+  const roster = construireRoster_(pseudos);
+  const enrichi = mettreAJourSuivi_(roster);
+  const html = construireEmailTableau_(enrichi);
+
+  MailApp.sendEmail({
+    to: ALERT_EMAIL,
+    subject: '19PokerClub — Alerte adhésions du ' + Utilities.formatDate(new Date(), 'Europe/Paris', 'dd/MM/yyyy'),
+    htmlBody: html,
+  });
+
+  const problemeCount = enrichi.filter(function (p) { return p.categorie !== CATEGORIES.EN_REGLE; }).length;
+  const okCount = enrichi.length - problemeCount;
+  return { problemeCount: problemeCount, okCount: okCount, roster: enrichi };
+}
+
+// Catégorise sans rien enregistrer ni envoyer de mail : pour l'aperçu
+// "Vérifier" côté site.
+function previsualiser_(pseudos) {
+  return construireRoster_(pseudos);
 }
 
 function envoyerRapportHebdomadaire() {
-  const inscrits = getInscrits_();
-  const payes = getJoueursPayes_();
-
-  const inscritsParClef = {};
-  inscrits.forEach(function (p) {
-    inscritsParClef[normName_(p.nom) + '|' + normName_(p.prenom)] = p;
-  });
-  const payesParClef = {};
-  payes.forEach(function (p) {
-    payesParClef[normName_(p.nom) + '|' + normName_(p.prenom)] = p;
-  });
-
-  // Inscrits mais pas (encore) réglés
-  const inscritsNonPayes = inscrits.filter(function (p) { return !p.regle; });
-
-  // Payés mais sans ligne d'inscription
-  const payesNonInscrits = payes.filter(function (p) {
-    return !inscritsParClef[normName_(p.nom) + '|' + normName_(p.prenom)];
-  });
-
-  const listeA = updateTracking_('Pas réglé', inscritsNonPayes);
-  const listeB = updateTracking_('Pas de formulaire', payesNonInscrits);
-
-  const html =
-    '<h2>19PokerClub — Suivi hebdomadaire des adhésions</h2>' +
-    formatListeHtml_('Inscrits sans cotisation réglée', listeA, 'relance à faire') +
-    formatListeHtml_('Cotisation réglée sans formulaire rempli', listeB, 'à faire remplir le formulaire');
-
-  MailApp.sendEmail({
-    to: '19pokerclub@gmail.com',
-    subject: '19PokerClub — Suivi adhésions du ' + Utilities.formatDate(new Date(), 'Europe/Paris', 'dd/MM/yyyy'),
-    htmlBody: html,
-  });
+  envoyerAlerteComplete_([]);
 }
 
 // À exécuter UNE SEULE FOIS manuellement (sélectionne cette fonction dans le
@@ -319,124 +460,4 @@ function installerDeclencheurHebdomadaire() {
     .nearMinute(30)
     .atHour(19)
     .create();
-}
-
-/* ────────────────────────────────────────────────────────────────────────
- * Récap complet à la demande (bouton "Alertes" du site) : les 3 sources
- * (inscriptions, paiements Supabase, tournoi BlindValet collé sur le site)
- * croisées, avec TOUS les joueurs — ceux en règle et ceux à relancer.
- * ──────────────────────────────────────────────────────────────────────── */
-
-function construireEmailComplet_(problemeRows, okRows) {
-  let html = '<h2>19PokerClub — Récapitulatif complet des adhésions</h2>';
-
-  html += '<h3>⚠️ À régulariser (' + problemeRows.length + ')</h3>';
-  if (problemeRows.length === 0) {
-    html += '<p>Personne, tout le monde est en règle 🎉</p>';
-  } else {
-    html += '<ul>';
-    problemeRows.forEach(function (r) {
-      const motifs = Object.keys(r.compteurs)
-        .map(function (m) {
-          const c = r.compteurs[m];
-          return m + ' (' + (c > 1 ? c + 'e semaine' : '1re semaine') + ')';
-        })
-        .join(', ');
-      html += '<li>' + (r.prenom ? r.prenom + ' ' : '') + r.nom + ' — ' + motifs + '</li>';
-    });
-    html += '</ul>';
-  }
-
-  html += '<h3>✅ En règle (' + okRows.length + ')</h3>';
-  if (okRows.length === 0) {
-    html += '<p>Aucun joueur.</p>';
-  } else {
-    html += '<ul>';
-    okRows.forEach(function (r) {
-      html += '<li>' + (r.prenom ? r.prenom + ' ' : '') + r.nom + '</li>';
-    });
-    html += '</ul>';
-  }
-
-  return html;
-}
-
-function envoyerAlerteComplete_(blindValetPseudos) {
-  const pseudos = (blindValetPseudos || []).filter(Boolean);
-  const inscrits = getInscrits_();
-  const payes = getJoueursPayes_();
-
-  const pseudosSet = {};
-  pseudos.forEach(function (p) { pseudosSet[normName_(p)] = true; });
-
-  const inscritsParClef = {};
-  inscrits.forEach(function (p) { inscritsParClef[normName_(p.nom) + '|' + normName_(p.prenom)] = p; });
-
-  const inscritsNonPayes = inscrits.filter(function (p) { return !p.regle; });
-  const payesNonInscrits = payes.filter(function (p) {
-    return !inscritsParClef[normName_(p.nom) + '|' + normName_(p.prenom)];
-  });
-
-  // Sur le tournoi sans régularisation : inscrits mais pas réglés et dont le
-  // pseudo BlindValet est sur la liste, OU pseudo sur la liste sans aucune
-  // ligne d'inscription du tout.
-  const pseudosMatches = {};
-  inscrits.forEach(function (p) {
-    if (p.pseudoBlindValet) pseudosMatches[normName_(p.pseudoBlindValet)] = true;
-  });
-  const surTournoiProblemes = [];
-  inscrits.forEach(function (p) {
-    if (p.pseudoBlindValet && pseudosSet[normName_(p.pseudoBlindValet)] && !p.regle) {
-      surTournoiProblemes.push({ nom: p.nom, prenom: p.prenom });
-    }
-  });
-  Object.keys(pseudosSet).forEach(function (normPseudo) {
-    if (pseudosMatches[normPseudo]) return;
-    const original = pseudos.filter(function (p) { return normName_(p) === normPseudo; })[0];
-    surTournoiProblemes.push({ nom: original, prenom: '' });
-  });
-
-  const listeA = updateTracking_('Pas réglé', inscritsNonPayes);
-  const listeB = updateTracking_('Pas de formulaire', payesNonInscrits);
-  const listeC = updateTracking_('Sur tournoi sans régularisation', surTournoiProblemes);
-
-  const compteursParClef = {};
-  function ajouter(liste, motif) {
-    liste.forEach(function (p) {
-      const clef = normName_(p.nom) + '|' + normName_(p.prenom);
-      if (!compteursParClef[clef]) compteursParClef[clef] = {};
-      compteursParClef[clef][motif] = p.compteur;
-    });
-  }
-  ajouter(listeA, 'Pas réglé');
-  ajouter(listeB, 'Pas de formulaire');
-  ajouter(listeC, 'Sur tournoi sans régularisation');
-
-  const tousLesJoueurs = {};
-  inscrits.forEach(function (p) { tousLesJoueurs[normName_(p.nom) + '|' + normName_(p.prenom)] = { nom: p.nom, prenom: p.prenom }; });
-  payes.forEach(function (p) { tousLesJoueurs[normName_(p.nom) + '|' + normName_(p.prenom)] = { nom: p.nom, prenom: p.prenom }; });
-  surTournoiProblemes.forEach(function (p) {
-    const clef = normName_(p.nom) + '|' + normName_(p.prenom);
-    if (!tousLesJoueurs[clef]) tousLesJoueurs[clef] = { nom: p.nom, prenom: p.prenom };
-  });
-
-  const rows = Object.keys(tousLesJoueurs)
-    .map(function (clef) {
-      const p = tousLesJoueurs[clef];
-      return { nom: p.nom, prenom: p.prenom, compteurs: compteursParClef[clef] || null };
-    })
-    .sort(function (a, b) { return normName_(a.nom) < normName_(b.nom) ? -1 : 1; });
-
-  const problemeRows = rows.filter(function (r) { return r.compteurs; });
-  const okRows = rows.filter(function (r) { return !r.compteurs; });
-
-  const html = construireEmailComplet_(problemeRows, okRows);
-
-  MailApp.sendEmail({
-    to: '19pokerclub@gmail.com',
-    subject: '19PokerClub — Alerte adhésions du ' + Utilities.formatDate(new Date(), 'Europe/Paris', 'dd/MM/yyyy'),
-    htmlBody: html,
-  });
-
-  return { problemeCount: problemeRows.length, okCount: okRows.length };
 }
