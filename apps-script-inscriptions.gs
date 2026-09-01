@@ -295,7 +295,7 @@ function getTrackingSheet_() {
   let sheet = ss.getSheetByName(TRACKING_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(TRACKING_SHEET_NAME);
-    sheet.appendRow(['Nom', 'Prénom', 'Catégorie', 'Première alerte', 'Dernière alerte', 'Étapes BV']);
+    sheet.appendRow(['Nom', 'Prénom', 'Catégorie', 'Première alerte', 'Dernière alerte', 'Étapes BV', 'Dernière semaine étape']);
   }
   return sheet;
 }
@@ -309,7 +309,7 @@ function getTrackingSheet_() {
 function mettreAJourSuivi_(roster) {
   const sheet = getTrackingSheet_();
   const data = sheet.getDataRange().getValues();
-  const existing = {}; // clef -> { row, categorie, premiere, etapes }
+  const existing = {}; // clef -> { row, categorie, premiere, etapes, derniereSemaineEtape }
   for (let i = 1; i < data.length; i++) {
     const clef = normName_(data[i][0]) + '|' + normName_(data[i][1]);
     existing[clef] = {
@@ -317,6 +317,7 @@ function mettreAJourSuivi_(roster) {
       categorie: data[i][2],
       premiere: data[i][3],
       etapes: Number(data[i][5]) || 0,
+      derniereSemaineEtape: Number(data[i][6]) || 0,
     };
   }
 
@@ -333,15 +334,21 @@ function mettreAJourSuivi_(roster) {
     const premiere = memeCategorie ? new Date(prev.premiere) : now;
     const semaines = Math.floor((now - premiere) / MS_PAR_SEMAINE) + 1;
     const estBV = CATEGORIES_BV.indexOf(p.categorie) !== -1;
-    const etapes = estBV ? (memeCategorie ? prev.etapes + 1 : 1) : null;
+    // Une "étape" ne compte qu'une fois par semaine : si on a déjà
+    // incrémenté pour cette semaine (même en cas de plusieurs clics), on ne
+    // rajoute rien.
+    const dejaCompteeCetteSemaine = memeCategorie && prev.derniereSemaineEtape === semaines;
+    const etapes = estBV ? (dejaCompteeCetteSemaine ? prev.etapes : (memeCategorie ? prev.etapes + 1 : 1)) : null;
+    const derniereSemaineEtape = estBV ? semaines : (prev ? prev.derniereSemaineEtape : 0);
 
     if (prev) {
       sheet.getRange(prev.row, 3).setValue(p.categorie);
       if (!memeCategorie) sheet.getRange(prev.row, 4).setValue(now);
       sheet.getRange(prev.row, 5).setValue(now);
       sheet.getRange(prev.row, 6).setValue(etapes || '');
+      sheet.getRange(prev.row, 7).setValue(derniereSemaineEtape || '');
     } else {
-      sheet.appendRow([p.nom, p.prenom, p.categorie, now, now, etapes || '']);
+      sheet.appendRow([p.nom, p.prenom, p.categorie, now, now, etapes || '', derniereSemaineEtape || '']);
     }
 
     return Object.assign({}, p, { semaines: semaines, etapes: etapes });
@@ -362,6 +369,38 @@ function mettreAJourSuivi_(roster) {
   return enrichi;
 }
 
+// Calcule les compteurs (semaines/étapes) tels qu'ils seraient SI on
+// envoyait les alertes maintenant, sans rien écrire dans le suivi — pour
+// l'aperçu du bouton "Vérifier".
+function calculerCompteursSansEcrire_(roster) {
+  const sheet = getTrackingSheet_();
+  const data = sheet.getDataRange().getValues();
+  const existing = {};
+  for (let i = 1; i < data.length; i++) {
+    const clef = normName_(data[i][0]) + '|' + normName_(data[i][1]);
+    existing[clef] = {
+      categorie: data[i][2],
+      premiere: data[i][3],
+      etapes: Number(data[i][5]) || 0,
+      derniereSemaineEtape: Number(data[i][6]) || 0,
+    };
+  }
+
+  const now = new Date();
+  return roster.map(function (p) {
+    if (p.categorie === CATEGORIES.EN_REGLE) return p;
+    const clef = normName_(p.nom) + '|' + normName_(p.prenom);
+    const prev = existing[clef];
+    const memeCategorie = prev && prev.categorie === p.categorie;
+    const premiere = memeCategorie ? new Date(prev.premiere) : now;
+    const semaines = Math.floor((now - premiere) / MS_PAR_SEMAINE) + 1;
+    const estBV = CATEGORIES_BV.indexOf(p.categorie) !== -1;
+    const dejaCompteeCetteSemaine = memeCategorie && prev.derniereSemaineEtape === semaines;
+    const etapes = estBV ? (dejaCompteeCetteSemaine ? prev.etapes : (memeCategorie ? prev.etapes + 1 : 1)) : null;
+    return Object.assign({}, p, { semaines: semaines, etapes: etapes });
+  });
+}
+
 function libelleMotif_(categorie, etapes) {
   const base = categorie.replace('A régulariser - ', '');
   if (etapes) return base + ' (' + etapes + ' étape' + (etapes > 1 ? 's' : '') + ' BV sans régularisation)';
@@ -373,10 +412,13 @@ function construireEmailTableau_(roster) {
   const enRegle = roster.filter(function (p) { return p.categorie === CATEGORIES.EN_REGLE; });
 
   aRegulariser.sort(function (a, b) {
-    if (a.categorie !== b.categorie) return a.categorie < b.categorie ? -1 : 1;
-    return normName_(a.nom) < normName_(b.nom) ? -1 : 1;
+    if (normName_(a.nom) !== normName_(b.nom)) return normName_(a.nom) < normName_(b.nom) ? -1 : 1;
+    return normName_(a.prenom) < normName_(b.prenom) ? -1 : 1;
   });
-  enRegle.sort(function (a, b) { return normName_(a.nom) < normName_(b.nom) ? -1 : 1; });
+  enRegle.sort(function (a, b) {
+    if (normName_(a.nom) !== normName_(b.nom)) return normName_(a.nom) < normName_(b.nom) ? -1 : 1;
+    return normName_(a.prenom) < normName_(b.prenom) ? -1 : 1;
+  });
 
   const styleTable = 'border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;';
   const styleTh = 'background:#0F3D66;color:#fff;text-align:left;padding:6px 10px;';
@@ -437,10 +479,11 @@ function envoyerAlerteComplete_(pseudos) {
   return { problemeCount: problemeCount, okCount: okCount, roster: enrichi };
 }
 
-// Catégorise sans rien enregistrer ni envoyer de mail : pour l'aperçu
-// "Vérifier" côté site.
+// Catégorise et calcule un aperçu des compteurs (sans rien enregistrer ni
+// envoyer de mail) : pour le bouton "Vérifier" côté site.
 function previsualiser_(pseudos) {
-  return construireRoster_(pseudos);
+  const roster = construireRoster_(pseudos);
+  return calculerCompteursSansEcrire_(roster);
 }
 
 function envoyerRapportHebdomadaire() {

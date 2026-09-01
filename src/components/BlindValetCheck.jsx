@@ -25,8 +25,8 @@ const CATEGORIE_STYLE = {
 
 function RosterTable({ roster }) {
   const rows = [...roster].sort((a, b) => {
-    if (a.categorie !== b.categorie) return a.categorie === 'En règle' ? 1 : b.categorie === 'En règle' ? -1 : a.categorie.localeCompare(b.categorie)
-    return a.nom.localeCompare(b.nom)
+    if (a.nom !== b.nom) return a.nom.localeCompare(b.nom)
+    return (a.prenom || '').localeCompare(b.prenom || '')
   })
 
   return (
