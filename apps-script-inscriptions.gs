@@ -70,6 +70,14 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
+
+    if (body.action === 'alerte_complete') {
+      const result = envoyerAlerteComplete_(body.pseudos);
+      return ContentService.createTextOutput(
+        JSON.stringify({ success: true, problemeCount: result.problemeCount, okCount: result.okCount })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
     const nomRaw = String(body.nom || '').trim();
     const prenomRaw = String(body.prenom || '').trim();
     const nom = nomRaw.toUpperCase();
@@ -182,6 +190,7 @@ function getInscrits_() {
   const colNom = headers.indexOf(COL_NOM);
   const colPrenom = headers.indexOf(COL_PRENOM);
   const colValidation = headers.indexOf(COL_VALIDATION);
+  const colPseudoBV = headers.indexOf(COL_PSEUDO_BV);
 
   const inscrits = [];
   for (let i = headerRowIndex + 1; i < data.length; i++) {
@@ -191,6 +200,7 @@ function getInscrits_() {
       nom: nom,
       prenom: data[i][colPrenom] || '',
       regle: colValidation !== -1 && data[i][colValidation],
+      pseudoBlindValet: colPseudoBV !== -1 ? String(data[i][colPseudoBV] || '').trim() : '',
     });
   }
   return inscrits;
@@ -309,4 +319,124 @@ function installerDeclencheurHebdomadaire() {
     .nearMinute(30)
     .atHour(19)
     .create();
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Récap complet à la demande (bouton "Alertes" du site) : les 3 sources
+ * (inscriptions, paiements Supabase, tournoi BlindValet collé sur le site)
+ * croisées, avec TOUS les joueurs — ceux en règle et ceux à relancer.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+function construireEmailComplet_(problemeRows, okRows) {
+  let html = '<h2>19PokerClub — Récapitulatif complet des adhésions</h2>';
+
+  html += '<h3>⚠️ À régulariser (' + problemeRows.length + ')</h3>';
+  if (problemeRows.length === 0) {
+    html += '<p>Personne, tout le monde est en règle 🎉</p>';
+  } else {
+    html += '<ul>';
+    problemeRows.forEach(function (r) {
+      const motifs = Object.keys(r.compteurs)
+        .map(function (m) {
+          const c = r.compteurs[m];
+          return m + ' (' + (c > 1 ? c + 'e semaine' : '1re semaine') + ')';
+        })
+        .join(', ');
+      html += '<li>' + (r.prenom ? r.prenom + ' ' : '') + r.nom + ' — ' + motifs + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  html += '<h3>✅ En règle (' + okRows.length + ')</h3>';
+  if (okRows.length === 0) {
+    html += '<p>Aucun joueur.</p>';
+  } else {
+    html += '<ul>';
+    okRows.forEach(function (r) {
+      html += '<li>' + (r.prenom ? r.prenom + ' ' : '') + r.nom + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  return html;
+}
+
+function envoyerAlerteComplete_(blindValetPseudos) {
+  const pseudos = (blindValetPseudos || []).filter(Boolean);
+  const inscrits = getInscrits_();
+  const payes = getJoueursPayes_();
+
+  const pseudosSet = {};
+  pseudos.forEach(function (p) { pseudosSet[normName_(p)] = true; });
+
+  const inscritsParClef = {};
+  inscrits.forEach(function (p) { inscritsParClef[normName_(p.nom) + '|' + normName_(p.prenom)] = p; });
+
+  const inscritsNonPayes = inscrits.filter(function (p) { return !p.regle; });
+  const payesNonInscrits = payes.filter(function (p) {
+    return !inscritsParClef[normName_(p.nom) + '|' + normName_(p.prenom)];
+  });
+
+  // Sur le tournoi sans régularisation : inscrits mais pas réglés et dont le
+  // pseudo BlindValet est sur la liste, OU pseudo sur la liste sans aucune
+  // ligne d'inscription du tout.
+  const pseudosMatches = {};
+  inscrits.forEach(function (p) {
+    if (p.pseudoBlindValet) pseudosMatches[normName_(p.pseudoBlindValet)] = true;
+  });
+  const surTournoiProblemes = [];
+  inscrits.forEach(function (p) {
+    if (p.pseudoBlindValet && pseudosSet[normName_(p.pseudoBlindValet)] && !p.regle) {
+      surTournoiProblemes.push({ nom: p.nom, prenom: p.prenom });
+    }
+  });
+  Object.keys(pseudosSet).forEach(function (normPseudo) {
+    if (pseudosMatches[normPseudo]) return;
+    const original = pseudos.filter(function (p) { return normName_(p) === normPseudo; })[0];
+    surTournoiProblemes.push({ nom: original, prenom: '' });
+  });
+
+  const listeA = updateTracking_('Pas réglé', inscritsNonPayes);
+  const listeB = updateTracking_('Pas de formulaire', payesNonInscrits);
+  const listeC = updateTracking_('Sur tournoi sans régularisation', surTournoiProblemes);
+
+  const compteursParClef = {};
+  function ajouter(liste, motif) {
+    liste.forEach(function (p) {
+      const clef = normName_(p.nom) + '|' + normName_(p.prenom);
+      if (!compteursParClef[clef]) compteursParClef[clef] = {};
+      compteursParClef[clef][motif] = p.compteur;
+    });
+  }
+  ajouter(listeA, 'Pas réglé');
+  ajouter(listeB, 'Pas de formulaire');
+  ajouter(listeC, 'Sur tournoi sans régularisation');
+
+  const tousLesJoueurs = {};
+  inscrits.forEach(function (p) { tousLesJoueurs[normName_(p.nom) + '|' + normName_(p.prenom)] = { nom: p.nom, prenom: p.prenom }; });
+  payes.forEach(function (p) { tousLesJoueurs[normName_(p.nom) + '|' + normName_(p.prenom)] = { nom: p.nom, prenom: p.prenom }; });
+  surTournoiProblemes.forEach(function (p) {
+    const clef = normName_(p.nom) + '|' + normName_(p.prenom);
+    if (!tousLesJoueurs[clef]) tousLesJoueurs[clef] = { nom: p.nom, prenom: p.prenom };
+  });
+
+  const rows = Object.keys(tousLesJoueurs)
+    .map(function (clef) {
+      const p = tousLesJoueurs[clef];
+      return { nom: p.nom, prenom: p.prenom, compteurs: compteursParClef[clef] || null };
+    })
+    .sort(function (a, b) { return normName_(a.nom) < normName_(b.nom) ? -1 : 1; });
+
+  const problemeRows = rows.filter(function (r) { return r.compteurs; });
+  const okRows = rows.filter(function (r) { return !r.compteurs; });
+
+  const html = construireEmailComplet_(problemeRows, okRows);
+
+  MailApp.sendEmail({
+    to: '19pokerclub@gmail.com',
+    subject: '19PokerClub — Alerte adhésions du ' + Utilities.formatDate(new Date(), 'Europe/Paris', 'dd/MM/yyyy'),
+    htmlBody: html,
+  });
+
+  return { problemeCount: problemeRows.length, okCount: okRows.length };
 }

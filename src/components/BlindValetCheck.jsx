@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ClipboardPaste, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { ClipboardPaste, CheckCircle2, AlertTriangle, Mail } from 'lucide-react'
+import { envoyerAlerteComplete } from '../lib/inscriptionSync'
 
 function normalise(s) {
   return String(s || '').trim().toLowerCase()
@@ -19,6 +20,8 @@ function nettoyerPseudos(texte) {
 export default function BlindValetCheck({ inscrits }) {
   const [texte, setTexte] = useState('')
   const [resultat, setResultat] = useState(null)
+  const [envoi, setEnvoi] = useState('idle') // idle | envoi | ok | erreur
+  const [envoiInfo, setEnvoiInfo] = useState('')
 
   function verifier() {
     const pseudos = nettoyerPseudos(texte)
@@ -42,6 +45,20 @@ export default function BlindValetCheck({ inscrits }) {
     setResultat({ trouves, manquants })
   }
 
+  async function envoyerAlertes() {
+    setEnvoi('envoi')
+    setEnvoiInfo('')
+    const pseudos = nettoyerPseudos(texte)
+    const result = await envoyerAlerteComplete(pseudos)
+    if (result.success) {
+      setEnvoi('ok')
+      setEnvoiInfo(`Mail envoyé — ${result.problemeCount} joueur${result.problemeCount > 1 ? 's' : ''} à relancer, ${result.okCount} en règle.`)
+    } else {
+      setEnvoi('erreur')
+      setEnvoiInfo(result.error || 'Erreur inconnue')
+    }
+  }
+
   return (
     <div className="bg-white rounded-2xl shadow-card p-5 flex flex-col gap-4">
       <div>
@@ -50,8 +67,9 @@ export default function BlindValetCheck({ inscrits }) {
         </h3>
         <p className="text-sm text-ink/50 mt-1">
           Colle directement ce que tu copies depuis l'onglet "Joueurs" de BlindValet (tapis et initiales
-          d'avatar inclus, ils sont filtrés automatiquement). Le site vérifie ensuite lesquels n'ont pas de
-          ligne sur le formulaire d'inscription du club.
+          d'avatar inclus, ils sont filtrés automatiquement) pour vérifier ce tournoi, et/ou clique sur
+          "Alertes" pour envoyer le récap complet par mail (inscrits non réglés, réglés non inscrits, et — si
+          une liste est collée — joueurs sur ce tournoi sans être en règle).
         </p>
       </div>
 
@@ -63,13 +81,28 @@ export default function BlindValetCheck({ inscrits }) {
         className="border border-ink/15 rounded-xl px-3 py-2 text-sm font-mono resize-y"
       />
 
-      <button
-        onClick={verifier}
-        disabled={!texte.trim()}
-        className="self-start bg-felt text-ivory rounded-xl px-4 py-2 text-sm font-semibold hover:bg-felt-light disabled:opacity-40"
-      >
-        Vérifier
-      </button>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={verifier}
+          disabled={!texte.trim()}
+          className="bg-felt text-ivory rounded-xl px-4 py-2 text-sm font-semibold hover:bg-felt-light disabled:opacity-40"
+        >
+          Vérifier
+        </button>
+        <button
+          onClick={envoyerAlertes}
+          disabled={envoi === 'envoi'}
+          className="flex items-center gap-1.5 bg-white border border-ink/10 rounded-xl px-4 py-2 text-sm font-medium text-ink/70 hover:bg-ink/5 disabled:opacity-40"
+        >
+          <Mail size={14} />
+          {envoi === 'envoi' ? 'Envoi en cours…' : 'Alertes (récap complet par mail)'}
+        </button>
+        {envoiInfo && (
+          <span className={`text-xs font-medium ${envoi === 'erreur' ? 'text-chip-red' : 'text-chip-blue'}`}>
+            {envoiInfo}
+          </span>
+        )}
+      </div>
 
       {resultat && (
         <div className="flex flex-col gap-4 mt-2">

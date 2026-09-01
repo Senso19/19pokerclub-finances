@@ -16,6 +16,21 @@ export async function fetchInscrits() {
   }
 }
 
+export async function envoyerAlerteComplete(pseudos) {
+  if (!SCRIPT_URL) return { success: false, error: 'Synchronisation non configurée' }
+  try {
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'alerte_complete', pseudos }),
+    })
+    return await res.json()
+  } catch (err) {
+    console.error('Échec de l\'envoi de l\'alerte complète', err)
+    return { success: false, error: err.message }
+  }
+}
+
 export async function validateAdhesion({ nom, prenom, categorie }) {
   if (!SCRIPT_URL) return { success: false, error: 'Synchronisation non configurée' }
   try {
