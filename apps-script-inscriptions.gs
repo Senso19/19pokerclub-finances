@@ -412,6 +412,7 @@ function construireEmailTableau_(roster) {
   const enRegle = roster.filter(function (p) { return p.categorie === CATEGORIES.EN_REGLE; });
 
   aRegulariser.sort(function (a, b) {
+    if (a.categorie !== b.categorie) return a.categorie < b.categorie ? -1 : 1;
     if (normName_(a.nom) !== normName_(b.nom)) return normName_(a.nom) < normName_(b.nom) ? -1 : 1;
     return normName_(a.prenom) < normName_(b.prenom) ? -1 : 1;
   });
