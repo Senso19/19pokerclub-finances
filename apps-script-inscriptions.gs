@@ -31,6 +31,7 @@ const SHEET_TAB = 'Inscriptions';
 const COL_NOM = 'Nom';
 const COL_PRENOM = 'Prénom';
 const COL_VALIDATION = 'Cotisation réglée';
+const COL_PSEUDO_BV = 'Pseudo BlindValet';
 const ALERT_EMAIL = '19pokerclub@gmail.com';
 
 function findInscriptionsSheet_() {
@@ -48,6 +49,7 @@ function doGet(e) {
   const colNom = headers.indexOf(COL_NOM);
   const colPrenom = headers.indexOf(COL_PRENOM);
   const colValidation = headers.indexOf(COL_VALIDATION);
+  const colPseudoBV = headers.indexOf(COL_PSEUDO_BV);
 
   const joueurs = [];
   for (let i = headerRowIndex + 1; i < data.length; i++) {
@@ -57,6 +59,7 @@ function doGet(e) {
       nom: String(nom).trim(),
       prenom: String(data[i][colPrenom] || '').trim(),
       regle: colValidation !== -1 ? Boolean(data[i][colValidation]) : false,
+      pseudoBlindValet: colPseudoBV !== -1 ? String(data[i][colPseudoBV] || '').trim() : '',
     });
   }
 

@@ -5,6 +5,7 @@ import {
 import { ExternalLink, Ticket, UserPlus } from 'lucide-react'
 import { eur } from '../lib/format'
 import { buildMonthlySeries, categoryTotals } from '../lib/aggregate'
+import BlindValetCheck from '../components/BlindValetCheck'
 
 const GREEN = '#2E9E5B'
 const RED = '#D93B3B'
@@ -39,7 +40,7 @@ function CategoryBarList({ title, items, color }) {
   )
 }
 
-export default function Visualisation({ ecritures, categories, saison }) {
+export default function Visualisation({ ecritures, categories, saison, inscrits = [] }) {
   const months = useMemo(() => buildMonthlySeries(ecritures, saison, categories), [ecritures, saison, categories])
   const { recettes, depenses } = useMemo(() => categoryTotals(ecritures, categories), [ecritures, categories])
 
@@ -108,6 +109,8 @@ export default function Visualisation({ ecritures, categories, saison }) {
         <CategoryBarList title="Revenus par catégorie" items={recettes} color={GREEN} />
         <CategoryBarList title="Dépenses par catégorie" items={depenses} color={RED} />
       </div>
+
+      <BlindValetCheck inscrits={inscrits} />
     </div>
   )
 }

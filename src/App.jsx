@@ -349,7 +349,7 @@ export default function App() {
         )}
         {!errorMsg && tab === 'recap' && <Recap ecritures={ecritures} saison={saison} categories={categories} />}
         {!errorMsg && tab === 'visualisation' && (
-          <Visualisation ecritures={ecritures} categories={categories} saison={saison} />
+          <Visualisation ecritures={ecritures} categories={categories} saison={saison} inscrits={inscrits} />
         )}
       </main>
 
