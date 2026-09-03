@@ -10,7 +10,7 @@ function nettoyerPseudos(texte) {
   return texte
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l.length > 3 && !/^\d+$/.test(l))
+    .filter((l) => l.length > 3 && !/^\d+$/.test(l) && l.toLowerCase() !== 'tapis')
 }
 
 const CATEGORIE_STYLE = {

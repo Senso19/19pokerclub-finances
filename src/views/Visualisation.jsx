@@ -41,8 +41,8 @@ function CategoryBarList({ title, items, color }) {
 }
 
 export default function Visualisation({ ecritures, categories, saison, inscrits = [] }) {
-  const months = useMemo(() => buildMonthlySeries(ecritures, saison, categories), [ecritures, saison, categories])
-  const { recettes, depenses } = useMemo(() => categoryTotals(ecritures, categories), [ecritures, categories])
+  const months = useMemo(() => buildMonthlySeries(ecritures, saison, categories, true), [ecritures, saison, categories])
+  const { recettes, depenses } = useMemo(() => categoryTotals(ecritures, categories, true), [ecritures, categories])
 
   const ticketsUrl = import.meta.env.VITE_TICKETS_URL
   const adhesionUrl = import.meta.env.VITE_ADHESION_URL

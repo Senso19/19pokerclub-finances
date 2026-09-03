@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Trash2 } from 'lucide-react'
 import { isTicketAffectingCategory, ticketSign, needsJoueur, needsAdhesionValidation } from '../lib/aggregate'
 
@@ -34,8 +34,24 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
 
   const selectedCategory = categories.find((c) => c.id === form.categorie_id)
   const isTicketCategory = selectedCategory && needsJoueur(selectedCategory.nom, form.type)
+  const isTicketAffecting = selectedCategory && isTicketAffectingCategory(selectedCategory.nom, form.type)
   const usesInscrits = selectedCategory && selectedCategory.nom === 'Adhésions' && form.type === 'recette'
   const joueurSource = usesInscrits ? inscrits : joueurs
+
+  useEffect(() => {
+    if (!isTicketCategory) return
+    if (nouveauJoueur) {
+      if (nouveauNom.trim()) {
+        setForm((f) => ({ ...f, description: `${nouveauPrenom.trim()} ${nouveauNom.trim()}`.trim() }))
+      }
+      return
+    }
+    const picked = joueurSource.find((j) => `${j.nom}|${j.prenom}` === joueurKey)
+    if (picked) {
+      setForm((f) => ({ ...f, description: `${picked.prenom} ${picked.nom}`.trim() }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joueurKey, nouveauJoueur, nouveauNom, nouveauPrenom])
 
   async function submit(e) {
     e.preventDefault()
@@ -251,15 +267,17 @@ export default function EcritureModal({ initial, categories, defaultCompte, joue
               <option value="en_attente">En attente</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 text-sm mt-6">
-            <input
-              type="checkbox"
-              checked={form.ticket_casino}
-              onChange={(e) => update('ticket_casino', e.target.checked)}
-              className="accent-chip-gold w-4 h-4"
-            />
-            <span>Ticket Casino</span>
-          </label>
+          {isTicketAffecting && (
+            <label className="flex items-center gap-2 text-sm mt-6">
+              <input
+                type="checkbox"
+                checked={form.ticket_casino}
+                onChange={(e) => update('ticket_casino', e.target.checked)}
+                className="accent-chip-gold w-4 h-4"
+              />
+              <span>Ticket Casino</span>
+            </label>
+          )}
         </div>
 
         <label className="flex flex-col gap-1 text-sm">

@@ -4,12 +4,13 @@ import { MOIS } from './format'
 // mois de début de saison (ex: si la saison démarre le 25/08, l'ordre est
 // Août -> Juillet suivant), avec les cumuls d'écritures validées, dans
 // l'esprit de l'onglet "Analyse par mois" / "Récap par mois" du Sheet.
-// `categories` sert à exclure les catégories "tickets casino" (Adhésions par
-// Bankroll, Dons par Bankroll, Fin de validité TC, Paiement par Bankroll,
-// Ticket casino) du calcul du solde de trésorerie réel : ces écritures ne
-// déplacent aucun argent, elles ajustent seulement le solde de tickets dû
-// aux adhérents.
-export function buildMonthlySeries(ecritures, saison, categories = []) {
+// `categories` sert à exclure les catégories "tickets casino" du calcul du
+// solde de trésorerie réel (toujours exclues, quel que soit includeAll) :
+// ces écritures ne déplacent aucun argent, elles ajustent seulement le
+// solde de tickets dû aux adhérents. `includeAll` (utilisé par l'onglet
+// Visualisation) inclut en revanche ces catégories dans les totaux
+// revenus/dépenses "comptables" affichés dans les graphiques.
+export function buildMonthlySeries(ecritures, saison, categories = [], includeAll = false) {
   const debut = saison ? new Date(saison.date_debut) : null
   const startMonth = debut ? debut.getMonth() : 8
   const startYear = debut ? debut.getFullYear() : new Date().getFullYear()
@@ -43,12 +44,13 @@ export function buildMonthlySeries(ecritures, saison, categories = []) {
     const cat = catById[e.categorie_id]
     const isTicket = cat && isNonCashTicketCategory(cat.nom, e.type)
     const isTransfer = cat && isInternalTransferCategory(cat.nom, e.type)
+    const excluAffichage = includeAll ? false : isTicket || isTransfer
     if (e.type === 'recette') {
       if (e.ticket_casino) m.ticketsCasino += e.montant
-      if (!isTicket && !isTransfer) m.revenus += e.montant
+      if (!excluAffichage) m.revenus += e.montant
       if (!isTicket) m.encaisse += e.montant
     } else {
-      if (!isTicket && !isTransfer) m.depenses += e.montant
+      if (!excluAffichage) m.depenses += e.montant
       if (!isTicket) m.decaisse += e.montant
     }
   }
@@ -77,14 +79,14 @@ export function totalsFromSeries(months) {
 // Somme des écritures validées par catégorie, séparé recettes / dépenses,
 // trié du plus grand au plus petit — pour le graphique en barres horizontales
 // de l'onglet Visualisation.
-export function categoryTotals(ecritures, categories) {
+export function categoryTotals(ecritures, categories, includeAll = false) {
   const catById = Object.fromEntries(categories.map((c) => [c.id, c]))
   const totals = {}
 
   for (const e of ecritures) {
     if (e.statut !== 'valide') continue
     const cat = catById[e.categorie_id]
-    if (cat && (isNonCashTicketCategory(cat.nom, e.type) || isInternalTransferCategory(cat.nom, e.type))) continue
+    if (!includeAll && cat && (isNonCashTicketCategory(cat.nom, e.type) || isInternalTransferCategory(cat.nom, e.type))) continue
     const key = `${e.type}:${e.categorie_id || 'none'}`
     if (!totals[key]) {
       totals[key] = { nom: cat?.nom || 'Sans catégorie', type: e.type, total: 0 }
